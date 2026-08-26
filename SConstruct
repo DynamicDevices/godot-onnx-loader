@@ -113,16 +113,12 @@ else:
 
 smoke_csv = env_c.Program("build/smoke_csv", "tools/smoke_csv.c", LIBS=[runtime_lib, "onnxruntime", "m"])
 
-csv_path = "fixtures/ci-smoke/demo_inputs.csv"
-smoke_csv_run = env_c.Command(
-    "build/smoke_csv.stamp",
-    [smoke_csv, csv_path],
-    "./build/smoke_csv fixtures/ci-smoke/model.json fixtures/ci-smoke/model.onnx "
-    f"{csv_path} | tee /tmp/onnx-loader-smoke-csv.txt && "
-    "grep -q ONNX_LOADER_CSV_SMOKE_OK /tmp/onnx-loader-smoke-csv.txt",
+smoke_dlopen = env_c.Program(
+    "build/smoke_dlopen_ort",
+    "tools/smoke_dlopen_ort.c",
+    LINKFLAGS=["-Wl,--disable-new-dtags,-rpath,$ORIGIN"],
+    LIBS=["onnxruntime", "dl"],
 )
-
-Alias("smoke-csv", smoke_csv_run)
 
 
 def _bundle_ort_libs(target, source, env):
@@ -142,5 +138,26 @@ bundle_ort = env.Command(
     library,
     _bundle_ort_libs,
 )
+
+csv_path = "fixtures/ci-smoke/demo_inputs.csv"
+model_onnx = "fixtures/ci-smoke/model.onnx"
+smoke_csv_run = env_c.Command(
+    "build/smoke_csv.stamp",
+    [smoke_csv, csv_path],
+    "./build/smoke_csv fixtures/ci-smoke/model.json fixtures/ci-smoke/model.onnx "
+    f"{csv_path} | tee /tmp/onnx-loader-smoke-csv.txt && "
+    "grep -q ONNX_LOADER_CSV_SMOKE_OK /tmp/onnx-loader-smoke-csv.txt",
+)
+
+smoke_dlopen_run = env_c.Command(
+    "build/smoke_dlopen_ort.stamp",
+    [smoke_dlopen, bundle_ort, model_onnx],
+    "LD_LIBRARY_PATH=addons/onnx_loader/bin ./build/smoke_dlopen_ort addons/onnx_loader/bin "
+    "fixtures/ci-smoke/model.onnx | tee /tmp/onnx-loader-smoke-dlopen.txt && "
+    "grep -q ONNX_DLOPEN_TEARDOWN_OK /tmp/onnx-loader-smoke-dlopen.txt",
+)
+
+Alias("smoke-csv", smoke_csv_run)
+Alias("smoke-dlopen-ort", smoke_dlopen_run)
 Alias("bundle-ort", bundle_ort)
 Default(library, bundle_ort)
