@@ -23,10 +23,14 @@ Fork/refreshed from [mat490/Godot-ONNX-AI-Models-Loaders](https://github.com/mat
 ```bash
 git clone --recurse-submodules https://github.com/DynamicDevices/godot-onnx-loader.git
 cd godot-onnx-loader
-nix develop
+nix develop   # MS ORT 1.20.1 prebuilt (NixOS-safe; nixpkgs libonnxruntime execstack fails in Godot)
 scons platform=linux target=template_debug
 scons smoke-csv   # host CSV table (no Godot required)
 ```
+
+On NixOS, **do not** point `ORT_ROOT` at nixpkgs `onnxruntime` for Godot — the store
+`libonnxruntime.so.1` requests an executable stack and Godot dlopen fails. The flake
+and CI both use the Microsoft linux-x64 tarball instead.
 
 Godot 4.3 (optional):
 

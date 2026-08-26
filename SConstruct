@@ -60,7 +60,10 @@ ort_flags = {
     "CPPDEFINES": {"ONNX_LOADER_WITH_ORT": 1},
     "LIBPATH": [ort_lib],
     "LIBS": ["onnxruntime", "m"],
-    "LINKFLAGS": [f"-Wl,-rpath,{ort_lib}"],
+    "LINKFLAGS": [
+        f"-Wl,-rpath,{ort_lib}",
+        "-Wl,-z,noexecstack",
+    ],
 }
 
 # C only — no godot headers; strict warnings.
