@@ -6,7 +6,7 @@
 #define ONNX_LOADER_RUNTIME_H
 
 /** Bump when Julian needs to confirm a rebuilt .so is loaded. */
-#define ONNX_LOADER_BUILD "opts-eager-20260826b"
+#define ONNX_LOADER_BUILD "session-unload-20260826c"
 
 #include <stdint.h>
 
@@ -20,6 +20,9 @@ typedef struct OnnxRuntime OnnxRuntime;
 OnnxRuntime *onnx_runtime_create(const char *model_onnx_path);
 
 void onnx_runtime_destroy(OnnxRuntime *rt);
+
+/** Godot RefCounted drop: orphan session until GDExtension module shutdown. */
+void onnx_runtime_drop(OnnxRuntime *rt);
 
 /** Release shared ORT env (GDExtension module terminator / process exit). */
 void onnx_runtime_shutdown(void);

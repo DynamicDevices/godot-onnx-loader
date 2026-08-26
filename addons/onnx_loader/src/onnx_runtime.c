@@ -22,6 +22,15 @@ static const OrtApi *g_ort;
 static OrtEnv *g_env;
 static int g_env_users;
 
+#define ORPHAN_MAX 64
+static OrtSession *g_orphan_sessions[ORPHAN_MAX];
+static int g_orphan_n;
+
+static void teardown_log(const char *stage)
+{
+	fprintf(stderr, "ONNX_LOADER_TEARDOWN %s\n", stage);
+}
+
 static int ort_fail(const OrtApi *ort, OrtStatus *st, const char *what)
 {
 	if (!st) {
@@ -241,29 +250,71 @@ void onnx_runtime_destroy(OnnxRuntime *rt)
 		return;
 	}
 	const OrtApi *ort = rt->ort;
-	if (ort) {
-		if (rt->session) {
-			ort->ReleaseSession(rt->session);
+	teardown_log("destroy-enter");
+	if (ort && rt->session) {
+		teardown_log("ReleaseSession");
+		ort->ReleaseSession(rt->session);
+		rt->session = NULL;
+		teardown_log("ReleaseSession-done");
+	}
+	ort_env_unuse();
+	rt->ort = NULL;
+	teardown_log("free-rt");
+	free(rt);
+	teardown_log("destroy-exit");
+}
+
+void onnx_runtime_drop(OnnxRuntime *rt)
+{
+	if (!rt) {
+		return;
+	}
+	teardown_log("drop-enter");
+	if (rt->session) {
+		if (g_orphan_n < ORPHAN_MAX) {
+			g_orphan_sessions[g_orphan_n++] = rt->session;
+			rt->session = NULL;
+			teardown_log("orphan-session");
+		} else {
+			teardown_log("orphan-full-immediate-ReleaseSession");
+			const OrtApi *ort = rt->ort;
+			if (ort) {
+				ort->ReleaseSession(rt->session);
+			}
 			rt->session = NULL;
 		}
 	}
 	ort_env_unuse();
 	rt->ort = NULL;
+	teardown_log("drop-free-rt");
 	free(rt);
+	teardown_log("drop-exit");
 }
 
 void onnx_runtime_shutdown(void)
 {
 	const OrtApi *ort = g_ort;
+	teardown_log("shutdown-enter");
+	while (g_orphan_n > 0) {
+		OrtSession *session = g_orphan_sessions[--g_orphan_n];
+		if (ort && session) {
+			teardown_log("ReleaseSession-shutdown");
+			ort->ReleaseSession(session);
+			teardown_log("ReleaseSession-shutdown-done");
+		}
+	}
 	if (g_env_users != 0) {
 		fprintf(stderr, "onnx_runtime_shutdown: %d live session(s)\n", g_env_users);
 	}
 	if (ort && g_env) {
+		teardown_log("ReleaseEnv");
 		ort->ReleaseEnv(g_env);
 		g_env = NULL;
+		teardown_log("ReleaseEnv-done");
 	}
 	g_env_users = 0;
 	g_ort = NULL;
+	teardown_log("shutdown-exit");
 }
 
 const char *onnx_runtime_ort_version(void)
