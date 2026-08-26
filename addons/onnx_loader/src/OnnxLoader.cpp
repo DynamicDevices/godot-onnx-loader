@@ -7,7 +7,7 @@ OnnxLoader::OnnxLoader() = default;
 OnnxLoader::~OnnxLoader()
 {
 	if (rt) {
-		onnx_runtime_destroy(rt);
+		onnx_runtime_destroy_deferred(rt);
 		rt = nullptr;
 	}
 }
@@ -20,6 +20,7 @@ void OnnxLoader::_bind_methods()
 	ClassDB::bind_method(D_METHOD("predict_array", "input_data"), &OnnxLoader::predict_array);
 	ClassDB::bind_method(D_METHOD("get_input_size"), &OnnxLoader::get_input_size);
 	ClassDB::bind_method(D_METHOD("get_output_size"), &OnnxLoader::get_output_size);
+	ClassDB::bind_method(D_METHOD("get_diagnostics"), &OnnxLoader::get_diagnostics);
 }
 
 bool OnnxLoader::load_model(const String &model_onnx_path)
@@ -81,4 +82,22 @@ int OnnxLoader::get_input_size() const
 int OnnxLoader::get_output_size() const
 {
 	return rt ? onnx_runtime_output_size(rt) : 0;
+}
+
+Dictionary OnnxLoader::get_diagnostics() const
+{
+	Dictionary d;
+	d["loader_build"] = String(ONNX_LOADER_BUILD);
+	d["ort_version"] = String(onnx_runtime_ort_version());
+	d["ort_api_version"] = (int64_t)onnx_runtime_ort_api_version();
+	if (rt) {
+		d["model_loaded"] = true;
+		d["input_size"] = get_input_size();
+		d["output_size"] = get_output_size();
+		d["input_name"] = String(onnx_runtime_input_name(rt));
+		d["output_name"] = String(onnx_runtime_output_name(rt));
+	} else {
+		d["model_loaded"] = false;
+	}
+	return d;
 }

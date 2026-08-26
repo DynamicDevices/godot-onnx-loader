@@ -5,6 +5,11 @@
 #ifndef ONNX_LOADER_RUNTIME_H
 #define ONNX_LOADER_RUNTIME_H
 
+/** Bump when Julian needs to confirm a rebuilt .so is loaded. */
+#define ONNX_LOADER_BUILD "defer-diag-20260826a"
+
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -16,8 +21,16 @@ OnnxRuntime *onnx_runtime_create(const char *model_onnx_path);
 
 void onnx_runtime_destroy(OnnxRuntime *rt);
 
+/** Godot quit path: defer ReleaseSession until GDExtension module shutdown. */
+void onnx_runtime_destroy_deferred(OnnxRuntime *rt);
+
 /** Release shared ORT env (GDExtension module terminator / process exit). */
 void onnx_runtime_shutdown(void);
+
+const char *onnx_runtime_ort_version(void);
+uint32_t onnx_runtime_ort_api_version(void);
+const char *onnx_runtime_input_name(const OnnxRuntime *rt);
+const char *onnx_runtime_output_name(const OnnxRuntime *rt);
 
 /** Flat input length must match onnx_runtime_input_size(). */
 int onnx_runtime_predict(const OnnxRuntime *rt, const float *input, int input_len,

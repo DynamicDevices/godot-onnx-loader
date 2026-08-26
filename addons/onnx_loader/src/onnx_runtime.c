@@ -1,5 +1,6 @@
 #include "onnx_runtime.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,6 +22,10 @@ struct OnnxRuntime {
 static const OrtApi *g_ort;
 static OrtEnv *g_env;
 static int g_env_users;
+
+#define DEFERRED_MAX 64
+static OnnxRuntime *g_deferred[DEFERRED_MAX];
+static int g_deferred_n;
 
 static int ort_fail(const OrtApi *ort, OrtStatus *st, const char *what)
 {
@@ -245,8 +250,23 @@ void onnx_runtime_destroy(OnnxRuntime *rt)
 	free(rt);
 }
 
+void onnx_runtime_destroy_deferred(OnnxRuntime *rt)
+{
+	if (!rt) {
+		return;
+	}
+	if (g_deferred_n >= DEFERRED_MAX) {
+		onnx_runtime_destroy(rt);
+		return;
+	}
+	g_deferred[g_deferred_n++] = rt;
+}
+
 void onnx_runtime_shutdown(void)
 {
+	while (g_deferred_n > 0) {
+		onnx_runtime_destroy(g_deferred[--g_deferred_n]);
+	}
 	const OrtApi *ort = g_ort;
 	if (g_env_users != 0) {
 		fprintf(stderr, "onnx_runtime_shutdown: %d live session(s)\n", g_env_users);
@@ -257,6 +277,30 @@ void onnx_runtime_shutdown(void)
 	}
 	g_env_users = 0;
 	g_ort = NULL;
+}
+
+const char *onnx_runtime_ort_version(void)
+{
+	const OrtApiBase *base = OrtGetApiBase();
+	if (!base || !base->GetVersionString) {
+		return "unknown";
+	}
+	return base->GetVersionString();
+}
+
+uint32_t onnx_runtime_ort_api_version(void)
+{
+	return (uint32_t)ORT_API_VERSION;
+}
+
+const char *onnx_runtime_input_name(const OnnxRuntime *rt)
+{
+	return rt ? rt->input_name : "";
+}
+
+const char *onnx_runtime_output_name(const OnnxRuntime *rt)
+{
+	return rt ? rt->output_name : "";
 }
 
 int onnx_runtime_input_size(const OnnxRuntime *rt)

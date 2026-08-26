@@ -5,6 +5,7 @@
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/variant/packed_float32_array.hpp>
 #include <godot_cpp/variant/array.hpp>
+#include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/string.hpp>
 
 using namespace godot;
@@ -29,4 +30,5 @@ public:
 
 	int get_input_size() const;
 	int get_output_size() const;
+	Dictionary get_diagnostics() const;
 };
