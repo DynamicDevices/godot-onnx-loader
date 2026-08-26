@@ -81,6 +81,9 @@ env_cpp.Append(
 
 runtime_lib = env_c.StaticLibrary("build/libonnx_runtime", runtime_c)
 
+# Append addon libs; do not pass LIBS= to SharedLibrary (that drops libgodot-cpp).
+env_cpp.Append(LIBS=[runtime_lib, "onnxruntime", "m"])
+
 libname = "onnx_loader"
 if env_cpp["platform"] == "macos":
     library = env_cpp.SharedLibrary(
@@ -93,7 +96,6 @@ if env_cpp["platform"] == "macos":
             env_cpp["target"],
         ),
         source=godot_sources,
-        LIBS=[runtime_lib, "onnxruntime", "m"],
     )
 else:
     library = env_cpp.SharedLibrary(
@@ -101,7 +103,6 @@ else:
             libname, env_cpp["suffix"], env_cpp["SHLIBSUFFIX"]
         ),
         source=godot_sources,
-        LIBS=[runtime_lib, "onnxruntime", "m"],
     )
 
 smoke_csv = env_c.Program("build/smoke_csv", "tools/smoke_csv.c", LIBS=[runtime_lib, "onnxruntime", "m"])
