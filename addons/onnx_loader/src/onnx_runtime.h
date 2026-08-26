@@ -6,7 +6,7 @@
 #define ONNX_LOADER_RUNTIME_H
 
 /** Bump when Julian needs to confirm a rebuilt .so is loaded. */
-#define ONNX_LOADER_BUILD "ort-bundled-rpath-20260826f"
+#define ONNX_LOADER_BUILD "ort-deepbind-20260826g"
 
 #include <stdint.h>
 

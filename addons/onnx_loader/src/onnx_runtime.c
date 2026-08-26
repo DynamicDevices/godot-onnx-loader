@@ -21,6 +21,8 @@ struct OnnxRuntime {
 };
 
 static const OrtApi *g_ort;
+static void *g_ort_dlhandle;
+static char g_ort_libpath[4096];
 static OrtEnv *g_env;
 static int g_env_users;
 
@@ -49,7 +51,47 @@ static const OrtApi *ort_api(void)
 	if (g_ort) {
 		return g_ort;
 	}
-	const OrtApiBase *base = OrtGetApiBase();
+
+	typedef const OrtApiBase *(*OrtGetApiBaseFn)(void);
+	OrtGetApiBaseFn get_base = OrtGetApiBase;
+
+	if (!g_ort_dlhandle) {
+		Dl_info info;
+		if (dladdr((void *)&ort_api, &info) && info.dli_fname && info.dli_fname[0]) {
+			char addon_path[4096];
+			snprintf(addon_path, sizeof(addon_path), "%s", info.dli_fname);
+			char *slash = strrchr(addon_path, '/');
+			if (slash) {
+				size_t dir_len = (size_t)(slash - addon_path);
+				int n = snprintf(g_ort_libpath, sizeof(g_ort_libpath), "%.*s/libonnxruntime.so.1",
+						 (int)dir_len, addon_path);
+				if (n <= 0 || (size_t)n >= sizeof(g_ort_libpath)) {
+					g_ort_libpath[0] = '\0';
+				} else {
+#ifndef RTLD_DEEPBIND
+#define RTLD_DEEPBIND 0
+#endif
+				g_ort_dlhandle = dlopen(g_ort_libpath, RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
+				if (g_ort_dlhandle) {
+					get_base = (OrtGetApiBaseFn)dlsym(g_ort_dlhandle, "OrtGetApiBase");
+					if (!get_base) {
+						fprintf(stderr, "dlsym OrtGetApiBase: %s\n", dlerror());
+						dlclose(g_ort_dlhandle);
+						g_ort_dlhandle = NULL;
+						get_base = OrtGetApiBase;
+						g_ort_libpath[0] = '\0';
+					}
+				} else {
+					fprintf(stderr, "dlopen bundled ORT %s: %s\n", g_ort_libpath,
+						dlerror() ? dlerror() : "(null)");
+					g_ort_libpath[0] = '\0';
+				}
+				}
+			}
+		}
+	}
+
+	const OrtApiBase *base = get_base ? get_base() : NULL;
 	if (!base) {
 		fprintf(stderr, "OrtGetApiBase failed\n");
 		return NULL;
@@ -294,6 +336,11 @@ void onnx_runtime_shutdown(void)
 	}
 	g_env_users = 0;
 	g_ort = NULL;
+	if (g_ort_dlhandle) {
+		dlclose(g_ort_dlhandle);
+		g_ort_dlhandle = NULL;
+	}
+	g_ort_libpath[0] = '\0';
 	teardown_log("shutdown-exit");
 }
 
@@ -308,7 +355,13 @@ const char *onnx_runtime_ort_version(void)
 
 const char *onnx_runtime_ort_library_path(void)
 {
-	const OrtApi *ort = ort_api();
+	if (g_ort_libpath[0]) {
+		return g_ort_libpath;
+	}
+	const OrtApi *ort = g_ort;
+	if (!ort) {
+		ort = ort_api();
+	}
 	if (!ort) {
 		return "unknown";
 	}
