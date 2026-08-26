@@ -7,7 +7,7 @@ OnnxLoader::OnnxLoader() = default;
 OnnxLoader::~OnnxLoader()
 {
 	if (rt) {
-		onnx_runtime_destroy_deferred(rt);
+		onnx_runtime_destroy(rt);
 		rt = nullptr;
 	}
 }

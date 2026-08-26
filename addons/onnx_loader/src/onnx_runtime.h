@@ -6,7 +6,7 @@
 #define ONNX_LOADER_RUNTIME_H
 
 /** Bump when Julian needs to confirm a rebuilt .so is loaded. */
-#define ONNX_LOADER_BUILD "defer-diag-20260826a"
+#define ONNX_LOADER_BUILD "opts-eager-20260826b"
 
 #include <stdint.h>
 
@@ -20,9 +20,6 @@ typedef struct OnnxRuntime OnnxRuntime;
 OnnxRuntime *onnx_runtime_create(const char *model_onnx_path);
 
 void onnx_runtime_destroy(OnnxRuntime *rt);
-
-/** Godot quit path: defer ReleaseSession until GDExtension module shutdown. */
-void onnx_runtime_destroy_deferred(OnnxRuntime *rt);
 
 /** Release shared ORT env (GDExtension module terminator / process exit). */
 void onnx_runtime_shutdown(void);

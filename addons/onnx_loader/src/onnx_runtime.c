@@ -11,7 +11,6 @@
 
 struct OnnxRuntime {
 	const OrtApi *ort;
-	OrtSessionOptions *opts;
 	OrtSession *session;
 	char input_name[ONNX_NAME_MAX];
 	char output_name[ONNX_NAME_MAX];
@@ -22,10 +21,6 @@ struct OnnxRuntime {
 static const OrtApi *g_ort;
 static OrtEnv *g_env;
 static int g_env_users;
-
-#define DEFERRED_MAX 64
-static OnnxRuntime *g_deferred[DEFERRED_MAX];
-static int g_deferred_n;
 
 static int ort_fail(const OrtApi *ort, OrtStatus *st, const char *what)
 {
@@ -198,13 +193,24 @@ OnnxRuntime *onnx_runtime_create(const char *model_onnx_path)
 	}
 	rt->ort = ort;
 
+	OrtSessionOptions *opts = NULL;
 	OrtAllocator *allocator = NULL;
 	char *tmp_in = NULL;
 	char *tmp_out = NULL;
 
-	if (ort_fail(ort, ort->CreateSessionOptions(&rt->opts), "CreateSessionOptions") ||
-	    ort_fail(ort, ort->CreateSession(g_env, model_onnx_path, rt->opts, &rt->session),
-		     "CreateSession") ||
+	if (ort_fail(ort, ort->CreateSessionOptions(&opts), "CreateSessionOptions") ||
+	    ort_fail(ort, ort->CreateSession(g_env, model_onnx_path, opts, &rt->session),
+		     "CreateSession")) {
+		if (opts) {
+			ort->ReleaseSessionOptions(opts);
+		}
+		onnx_runtime_destroy(rt);
+		return NULL;
+	}
+	ort->ReleaseSessionOptions(opts);
+	opts = NULL;
+
+	if (
 	    ort_fail(ort, ort->GetAllocatorWithDefaultOptions(&allocator), "GetAllocator") ||
 	    ort_fail(ort, ort->SessionGetInputName(rt->session, 0, allocator, &tmp_in),
 		     "GetInputName") ||
@@ -240,33 +246,14 @@ void onnx_runtime_destroy(OnnxRuntime *rt)
 			ort->ReleaseSession(rt->session);
 			rt->session = NULL;
 		}
-		if (rt->opts) {
-			ort->ReleaseSessionOptions(rt->opts);
-			rt->opts = NULL;
-		}
 	}
 	ort_env_unuse();
 	rt->ort = NULL;
 	free(rt);
 }
 
-void onnx_runtime_destroy_deferred(OnnxRuntime *rt)
-{
-	if (!rt) {
-		return;
-	}
-	if (g_deferred_n >= DEFERRED_MAX) {
-		onnx_runtime_destroy(rt);
-		return;
-	}
-	g_deferred[g_deferred_n++] = rt;
-}
-
 void onnx_runtime_shutdown(void)
 {
-	while (g_deferred_n > 0) {
-		onnx_runtime_destroy(g_deferred[--g_deferred_n]);
-	}
 	const OrtApi *ort = g_ort;
 	if (g_env_users != 0) {
 		fprintf(stderr, "onnx_runtime_shutdown: %d live session(s)\n", g_env_users);
