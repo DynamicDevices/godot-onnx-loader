@@ -132,11 +132,13 @@ def _bundle_ort_libs(target, source, env):
         if not os.path.isfile(src):
             continue
         dest = os.path.join(dest_dir, name)
-        if os.path.exists(dest):
-            os.chmod(dest, stat.S_IWUSR | stat.S_IRUSR)
-            os.remove(dest)
-        shutil.copy2(src, dest)
-        os.chmod(dest, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+        tmp = dest + ".new"
+        shutil.copy2(src, tmp)
+        os.chmod(
+            tmp,
+            stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH,
+        )
+        os.replace(tmp, dest)
     return None
 
 
@@ -150,8 +152,9 @@ csv_path = "fixtures/ci-smoke/demo_inputs.csv"
 model_onnx = "fixtures/ci-smoke/model.onnx"
 smoke_csv_run = env_c.Command(
     "build/smoke_csv.stamp",
-    [smoke_csv, csv_path],
-    "./build/smoke_csv fixtures/ci-smoke/model.json fixtures/ci-smoke/model.onnx "
+    [smoke_csv, bundle_ort, csv_path],
+    "LD_LIBRARY_PATH=addons/onnx_loader/bin ./build/smoke_csv fixtures/ci-smoke/model.json "
+    "fixtures/ci-smoke/model.onnx "
     f"{csv_path} | tee /tmp/onnx-loader-smoke-csv.txt && "
     "grep -q ONNX_LOADER_CSV_SMOKE_OK /tmp/onnx-loader-smoke-csv.txt",
 )

@@ -62,6 +62,7 @@ jobs:
       - name: Nix Godot csv_smoke (Julian path)
         run: |
           set -euo pipefail
+          rm -f addons/onnx_loader/bin/libonnxruntime.so*
           nix develop --command bash -c '
             set -euo pipefail
             git submodule update --init --recursive
