@@ -1,4 +1,5 @@
 #include "OnnxLoader.hpp"
+#include "onnx_runtime.h"
 
 #include <gdextension_interface.h>
 #include <godot_cpp/core/class_db.hpp>
@@ -20,6 +21,7 @@ void uninitialize_onnx_loader_module(ModuleInitializationLevel p_level)
 	if (p_level != MODULE_INITIALIZATION_LEVEL_SCENE) {
 		return;
 	}
+	onnx_runtime_shutdown();
 }
 
 extern "C" {

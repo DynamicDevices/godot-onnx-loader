@@ -16,6 +16,9 @@ OnnxRuntime *onnx_runtime_create(const char *model_onnx_path);
 
 void onnx_runtime_destroy(OnnxRuntime *rt);
 
+/** Release shared ORT env (GDExtension module terminator / process exit). */
+void onnx_runtime_shutdown(void);
+
 /** Flat input length must match onnx_runtime_input_size(). */
 int onnx_runtime_predict(const OnnxRuntime *rt, const float *input, int input_len,
 			 float *output, int output_cap, int *output_len_out);

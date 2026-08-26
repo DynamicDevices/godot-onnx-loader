@@ -6,17 +6,21 @@
 
 #include "onnxruntime_c_api.h"
 
+#define ONNX_NAME_MAX 128
+
 struct OnnxRuntime {
 	const OrtApi *ort;
-	OrtEnv *env;
 	OrtSessionOptions *opts;
 	OrtSession *session;
-	OrtAllocator *allocator;
-	char *input_name;
-	char *output_name;
+	char input_name[ONNX_NAME_MAX];
+	char output_name[ONNX_NAME_MAX];
 	int input_size;
 	int output_size;
 };
+
+static const OrtApi *g_ort;
+static OrtEnv *g_env;
+static int g_env_users;
 
 static int ort_fail(const OrtApi *ort, OrtStatus *st, const char *what)
 {
@@ -29,27 +33,68 @@ static int ort_fail(const OrtApi *ort, OrtStatus *st, const char *what)
 	return -1;
 }
 
-/** ORT-allocated I/O names must not outlive the session; keep our own copies. */
-static char *copy_ort_name(const OrtApi *ort, OrtAllocator *alloc, char *ort_name)
+static const OrtApi *ort_api(void)
 {
-	if (!ort_name) {
+	if (g_ort) {
+		return g_ort;
+	}
+	const OrtApiBase *base = OrtGetApiBase();
+	if (!base) {
+		fprintf(stderr, "OrtGetApiBase failed\n");
 		return NULL;
 	}
-	size_t n = strlen(ort_name) + 1;
-	char *copy = (char *)malloc(n);
-	if (!copy) {
-		OrtStatus *st = ort->AllocatorFree(alloc, ort_name);
-		if (st) {
-			ort->ReleaseStatus(st);
+	g_ort = base->GetApi(ORT_API_VERSION);
+	if (!g_ort) {
+		fprintf(stderr, "ORT GetApi failed\n");
+	}
+	return g_ort;
+}
+
+static int ort_env_use(void)
+{
+	const OrtApi *ort = ort_api();
+	if (!ort) {
+		return -1;
+	}
+	if (g_env_users == 0) {
+		if (ort_fail(ort, ort->CreateEnv(ORT_LOGGING_LEVEL_WARNING, "onnx_loader", &g_env),
+			     "CreateEnv")) {
+			return -1;
 		}
-		return NULL;
 	}
-	memcpy(copy, ort_name, n);
-	OrtStatus *st = ort->AllocatorFree(alloc, ort_name);
+	g_env_users++;
+	return 0;
+}
+
+static void ort_env_unuse(void)
+{
+	if (g_env_users <= 0) {
+		return;
+	}
+	g_env_users--;
+}
+
+static void copy_io_name(char *dst, size_t dst_cap, const char *src)
+{
+	if (!dst || dst_cap == 0) {
+		return;
+	}
+	if (!src) {
+		dst[0] = '\0';
+		return;
+	}
+	snprintf(dst, dst_cap, "%s", src);
+}
+
+static void release_ort_string(const OrtApi *ort, OrtAllocator *alloc, char *s)
+{
+	if (!ort || !alloc || !s) {
+		return;
+	}
+	OrtStatus *st = ort->AllocatorFree(alloc, s);
 	if (st) {
 		ort->ReleaseStatus(st);
 	}
-	return copy;
 }
 
 static int64_t shape_elements(const int64_t *shape, size_t rank, int64_t batch)
@@ -136,45 +181,40 @@ OnnxRuntime *onnx_runtime_create(const char *model_onnx_path)
 		return NULL;
 	}
 
-	const OrtApiBase *base = OrtGetApiBase();
-	if (!base) {
-		fprintf(stderr, "OrtGetApiBase failed\n");
-		return NULL;
-	}
-	const OrtApi *ort = base->GetApi(ORT_API_VERSION);
-	if (!ort) {
-		fprintf(stderr, "ORT GetApi failed\n");
+	const OrtApi *ort = ort_api();
+	if (!ort || ort_env_use() != 0) {
 		return NULL;
 	}
 
 	OnnxRuntime *rt = (OnnxRuntime *)calloc(1, sizeof(*rt));
 	if (!rt) {
+		ort_env_unuse();
 		return NULL;
 	}
 	rt->ort = ort;
 
-	if (ort_fail(ort, ort->CreateEnv(ORT_LOGGING_LEVEL_WARNING, "onnx_loader", &rt->env),
-		     "CreateEnv") ||
-	    ort_fail(ort, ort->CreateSessionOptions(&rt->opts), "CreateSessionOptions") ||
-	    ort_fail(ort, ort->CreateSession(rt->env, model_onnx_path, rt->opts, &rt->session),
-		     "CreateSession") ||
-	    ort_fail(ort, ort->GetAllocatorWithDefaultOptions(&rt->allocator), "GetAllocator")) {
-		onnx_runtime_destroy(rt);
-		return NULL;
-	}
+	OrtAllocator *allocator = NULL;
+	char *tmp_in = NULL;
+	char *tmp_out = NULL;
 
-	if (ort_fail(ort,
-		     ort->SessionGetInputName(rt->session, 0, rt->allocator, &rt->input_name),
+	if (ort_fail(ort, ort->CreateSessionOptions(&rt->opts), "CreateSessionOptions") ||
+	    ort_fail(ort, ort->CreateSession(g_env, model_onnx_path, rt->opts, &rt->session),
+		     "CreateSession") ||
+	    ort_fail(ort, ort->GetAllocatorWithDefaultOptions(&allocator), "GetAllocator") ||
+	    ort_fail(ort, ort->SessionGetInputName(rt->session, 0, allocator, &tmp_in),
 		     "GetInputName") ||
-	    ort_fail(ort,
-		     ort->SessionGetOutputName(rt->session, 0, rt->allocator, &rt->output_name),
+	    ort_fail(ort, ort->SessionGetOutputName(rt->session, 0, allocator, &tmp_out),
 		     "GetOutputName")) {
 		onnx_runtime_destroy(rt);
 		return NULL;
 	}
-	rt->input_name = copy_ort_name(ort, rt->allocator, rt->input_name);
-	rt->output_name = copy_ort_name(ort, rt->allocator, rt->output_name);
-	if (!rt->input_name || !rt->output_name ||
+
+	copy_io_name(rt->input_name, sizeof(rt->input_name), tmp_in);
+	copy_io_name(rt->output_name, sizeof(rt->output_name), tmp_out);
+	release_ort_string(ort, allocator, tmp_in);
+	release_ort_string(ort, allocator, tmp_out);
+
+	if (rt->input_name[0] == '\0' || rt->output_name[0] == '\0' ||
 	    tensor_float_elements(ort, rt->session, 1, 0, &rt->input_size) != 0 ||
 	    tensor_float_elements(ort, rt->session, 0, 0, &rt->output_size) != 0) {
 		onnx_runtime_destroy(rt);
@@ -190,9 +230,6 @@ void onnx_runtime_destroy(OnnxRuntime *rt)
 		return;
 	}
 	const OrtApi *ort = rt->ort;
-	free(rt->input_name);
-	free(rt->output_name);
-	rt->input_name = rt->output_name = NULL;
 	if (ort) {
 		if (rt->session) {
 			ort->ReleaseSession(rt->session);
@@ -202,13 +239,24 @@ void onnx_runtime_destroy(OnnxRuntime *rt)
 			ort->ReleaseSessionOptions(rt->opts);
 			rt->opts = NULL;
 		}
-		if (rt->env) {
-			ort->ReleaseEnv(rt->env);
-			rt->env = NULL;
-		}
 	}
+	ort_env_unuse();
 	rt->ort = NULL;
 	free(rt);
+}
+
+void onnx_runtime_shutdown(void)
+{
+	const OrtApi *ort = g_ort;
+	if (g_env_users != 0) {
+		fprintf(stderr, "onnx_runtime_shutdown: %d live session(s)\n", g_env_users);
+	}
+	if (ort && g_env) {
+		ort->ReleaseEnv(g_env);
+		g_env = NULL;
+	}
+	g_env_users = 0;
+	g_ort = NULL;
 }
 
 int onnx_runtime_input_size(const OnnxRuntime *rt)
@@ -237,7 +285,7 @@ int onnx_runtime_predict(const OnnxRuntime *rt, const float *input, int input_le
 
 	int64_t shape[2] = {1, (int64_t)rt->input_size};
 	if (ort_fail(ort,
-		     ort->CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault, &mem),
+		     ort->CreateCpuMemoryInfo(OrtDeviceAllocator, OrtMemTypeDefault, &mem),
 		     "CreateCpuMemoryInfo") ||
 	    ort_fail(ort,
 		     ort->CreateTensorWithDataAsOrtValue(

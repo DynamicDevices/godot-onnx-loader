@@ -283,5 +283,6 @@ int main(int argc, char **argv)
 	free(w);
 	fclose(csv);
 	onnx_runtime_destroy(rt);
+	onnx_runtime_shutdown();
 	return n > 0 ? 0 : 1;
 }
