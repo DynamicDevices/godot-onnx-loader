@@ -30,6 +30,7 @@
             git
             curl
             python3
+            godot_4
           ];
           shellHook = ''
             export ORT_ROOT="${ortMs}"
@@ -37,12 +38,14 @@
             export C_INCLUDE_PATH="${ortMs}/include''${C_INCLUDE_PATH:+:}$C_INCLUDE_PATH"
             export LIBRARY_PATH="${ortMs}/lib''${LIBRARY_PATH:+:}$LIBRARY_PATH"
             export LD_LIBRARY_PATH="${ortMs}/lib''${LD_LIBRARY_PATH:+:}$LD_LIBRARY_PATH"
+            export GODOT_BIN="${pkgs.godot_4}/bin/godot4"
             echo "godot-onnx-loader nix develop (ORT ${ortVersion} MS prebuilt — NixOS-safe dlopen)"
             echo "  ORT_ROOT=$ORT_ROOT"
+            echo "  GODOT_BIN=$GODOT_BIN"
             echo "  git submodule update --init --recursive"
             echo "  scons platform=linux target=template_debug"
             echo "  scons smoke-csv"
-            echo "  Godot 4.3: open demo/ and run csv_smoke.tscn"
+            echo "  bash tools/godot_csv_smoke.sh"
             if [ ! -f "$ORT_ROOT/include/onnxruntime_c_api.h" ] && \
                [ ! -f "$ORT_ROOT/include/onnxruntime/onnxruntime_c_api.h" ]; then
               echo "  ERROR: onnxruntime_c_api.h not under ORT_ROOT" >&2

@@ -6,7 +6,7 @@
 #define ONNX_LOADER_RUNTIME_H
 
 /** Bump when Julian needs to confirm a rebuilt .so is loaded. */
-#define ONNX_LOADER_BUILD "leak-exit-20260826d"
+#define ONNX_LOADER_BUILD "destroy-clean-20260826e"
 
 #include <stdint.h>
 
@@ -21,7 +21,7 @@ OnnxRuntime *onnx_runtime_create(const char *model_onnx_path);
 
 void onnx_runtime_destroy(OnnxRuntime *rt);
 
-/** Godot RefCounted drop: orphan session until GDExtension module shutdown. */
+/** Same as destroy — RefCounted drop must release the session, not leak it. */
 void onnx_runtime_drop(OnnxRuntime *rt);
 
 /** Release shared ORT env (GDExtension module terminator / process exit). */

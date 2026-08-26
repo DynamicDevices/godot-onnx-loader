@@ -6,10 +6,7 @@ OnnxLoader::OnnxLoader() = default;
 
 OnnxLoader::~OnnxLoader()
 {
-	if (rt) {
-		onnx_runtime_drop(rt);
-		rt = nullptr;
-	}
+	unload_model();
 }
 
 void OnnxLoader::_bind_methods()

@@ -264,45 +264,22 @@ void onnx_runtime_destroy(OnnxRuntime *rt)
 	teardown_log("destroy-exit");
 }
 
+/** @deprecated Same as onnx_runtime_destroy — kept for ABI; do not orphan sessions. */
 void onnx_runtime_drop(OnnxRuntime *rt)
 {
-	if (!rt) {
-		return;
-	}
-	teardown_log("drop-enter");
-	if (rt->session) {
-		if (g_orphan_n < ORPHAN_MAX) {
-			g_orphan_sessions[g_orphan_n++] = rt->session;
-			rt->session = NULL;
-			teardown_log("orphan-session");
-		} else {
-			teardown_log("orphan-full-immediate-ReleaseSession");
-			const OrtApi *ort = rt->ort;
-			if (ort) {
-				ort->ReleaseSession(rt->session);
-			}
-			rt->session = NULL;
-		}
-	}
-	ort_env_unuse();
-	rt->ort = NULL;
-	teardown_log("drop-free-rt");
-	free(rt);
-	teardown_log("drop-exit");
+	onnx_runtime_destroy(rt);
 }
 
 void onnx_runtime_shutdown(void)
 {
 	const OrtApi *ort = g_ort;
 	teardown_log("shutdown-enter");
-	if (g_orphan_n > 0) {
-		fprintf(stderr,
-			"ONNX_LOADER_TEARDOWN leak %d session(s) on exit (ReleaseSession unsafe under Godot)\n",
-			g_orphan_n);
-		g_orphan_n = 0;
-		g_env_users = 0;
-		teardown_log("shutdown-exit-leak");
-		return;
+	while (g_orphan_n > 0) {
+		OrtSession *s = g_orphan_sessions[--g_orphan_n];
+		if (ort && s) {
+			teardown_log("ReleaseSession-orphan");
+			ort->ReleaseSession(s);
+		}
 	}
 	if (g_env_users != 0) {
 		fprintf(stderr, "onnx_runtime_shutdown: %d live session(s)\n", g_env_users);
