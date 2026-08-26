@@ -48,11 +48,10 @@ static int64_t shape_elements(const int64_t *shape, size_t rank, int64_t batch)
 }
 
 static int tensor_float_elements(const OrtApi *ort, OrtSession *session,
-				 OrtAllocator *alloc, int is_input, int index,
-				 int *out_count)
+				 int is_input, int index, int *out_count)
 {
 	OrtTypeInfo *type_info = NULL;
-	OrtTensorTypeAndShapeInfo *tensor_info = NULL;
+	const OrtTensorTypeAndShapeInfo *tensor_info = NULL;
 	size_t rank = 0;
 	int64_t *shape = NULL;
 	int rc = -1;
@@ -147,8 +146,8 @@ OnnxRuntime *onnx_runtime_create(const char *model_onnx_path)
 	    ort_fail(ort,
 		     ort->SessionGetOutputName(rt->session, 0, rt->allocator, &rt->output_name),
 		     "GetOutputName") ||
-	    tensor_float_elements(ort, rt->session, rt->allocator, 1, 0, &rt->input_size) != 0 ||
-	    tensor_float_elements(ort, rt->session, rt->allocator, 0, 0, &rt->output_size) != 0) {
+	    tensor_float_elements(ort, rt->session, 1, 0, &rt->input_size) != 0 ||
+	    tensor_float_elements(ort, rt->session, 0, 0, &rt->output_size) != 0) {
 		onnx_runtime_destroy(rt);
 		return NULL;
 	}
