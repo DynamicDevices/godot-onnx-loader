@@ -123,13 +123,20 @@ smoke_dlopen = env_c.Program(
 
 def _bundle_ort_libs(target, source, env):
     import shutil
+    import stat
 
     dest_dir = Dir("addons/onnx_loader/bin").abspath
     os.makedirs(dest_dir, exist_ok=True)
     for name in ("libonnxruntime.so.1", "libonnxruntime.so"):
         src = os.path.join(ort_lib, name)
-        if os.path.isfile(src):
-            shutil.copy2(src, os.path.join(dest_dir, name))
+        if not os.path.isfile(src):
+            continue
+        dest = os.path.join(dest_dir, name)
+        if os.path.exists(dest):
+            os.chmod(dest, stat.S_IWUSR | stat.S_IRUSR)
+            os.remove(dest)
+        shutil.copy2(src, dest)
+        os.chmod(dest, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
     return None
 
 
