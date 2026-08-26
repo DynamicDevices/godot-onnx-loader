@@ -35,7 +35,16 @@ static char *copy_ort_name(const OrtApi *ort, OrtAllocator *alloc, char *ort_nam
 	if (!ort_name) {
 		return NULL;
 	}
-	char *copy = strdup(ort_name);
+	size_t n = strlen(ort_name) + 1;
+	char *copy = (char *)malloc(n);
+	if (!copy) {
+		OrtStatus *st = ort->AllocatorFree(alloc, ort_name);
+		if (st) {
+			ort->ReleaseStatus(st);
+		}
+		return NULL;
+	}
+	memcpy(copy, ort_name, n);
 	OrtStatus *st = ort->AllocatorFree(alloc, ort_name);
 	if (st) {
 		ort->ReleaseStatus(st);
