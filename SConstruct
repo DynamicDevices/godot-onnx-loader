@@ -5,6 +5,9 @@
   nix develop   # sets ORT_ROOT
   scons platform=linux target=template_debug
   scons smoke-csv
+
+Our C/C++ sources: -Wall -Wextra -Werror.
+godot-cpp submodule: custom.py (-Wno-unused-parameter); addon C++ also -Wno-unused-parameter for generated headers.
 """
 import os
 import sys
@@ -53,37 +56,58 @@ godot_sources = [
     f"{addon_src}/register_types.cpp",
 ]
 
-env.Append(
+ort_flags = {
+    "CPPDEFINES": {"ONNX_LOADER_WITH_ORT": 1},
+    "LIBPATH": [ort_lib],
+    "LIBS": ["onnxruntime", "m"],
+    "LINKFLAGS": [f"-Wl,-rpath,{ort_lib}"],
+}
+
+# C only — no godot headers; strict warnings.
+env_c = env.Clone()
+env_c.Append(
     CPPPATH=[addon_src, ort_inc],
-    CPPDEFINES={"ONNX_LOADER_WITH_ORT": 1},
-    CCFLAGS=["-std=c11", "-Wall", "-Wextra", "-fPIC"],
-    LIBPATH=[ort_lib],
-    LIBS=["onnxruntime", "m"],
-    LINKFLAGS=[f"-Wl,-rpath,{ort_lib}"],
+    CCFLAGS=["-std=c11", "-Wall", "-Wextra", "-Werror", "-fPIC"],
+    **ort_flags,
 )
 
-runtime_lib = env.StaticLibrary("build/libonnx_runtime", runtime_c)
+# C++ GDExtension bindings — Werror on our code; suppress godot-cpp header noise.
+env_cpp = env.Clone()
+env_cpp.Append(
+    CPPPATH=[addon_src, ort_inc],
+    CXXFLAGS=["-Wall", "-Wextra", "-Werror", "-Wno-unused-parameter"],
+    **ort_flags,
+)
+
+runtime_lib = env_c.StaticLibrary("build/libonnx_runtime", runtime_c)
 
 libname = "onnx_loader"
-if env["platform"] == "macos":
-    library = env.SharedLibrary(
+if env_cpp["platform"] == "macos":
+    library = env_cpp.SharedLibrary(
         "addons/onnx_loader/bin/lib{}.{}.{}.framework/lib{}.{}.{}".format(
-            libname, env["platform"], env["target"], libname, env["platform"], env["target"]
+            libname,
+            env_cpp["platform"],
+            env_cpp["target"],
+            libname,
+            env_cpp["platform"],
+            env_cpp["target"],
         ),
         source=godot_sources,
         LIBS=[runtime_lib, "onnxruntime", "m"],
     )
 else:
-    library = env.SharedLibrary(
-        "addons/onnx_loader/bin/lib{}{}{}".format(libname, env["suffix"], env["SHLIBSUFFIX"]),
+    library = env_cpp.SharedLibrary(
+        "addons/onnx_loader/bin/lib{}{}{}".format(
+            libname, env_cpp["suffix"], env_cpp["SHLIBSUFFIX"]
+        ),
         source=godot_sources,
         LIBS=[runtime_lib, "onnxruntime", "m"],
     )
 
-smoke_csv = env.Program("build/smoke_csv", "tools/smoke_csv.c", LIBS=[runtime_lib, "onnxruntime", "m"])
+smoke_csv = env_c.Program("build/smoke_csv", "tools/smoke_csv.c", LIBS=[runtime_lib, "onnxruntime", "m"])
 
 csv_path = "fixtures/ci-smoke/demo_inputs.csv"
-smoke_csv_run = env.Command(
+smoke_csv_run = env_c.Command(
     "build/smoke_csv.stamp",
     [smoke_csv, csv_path],
     "./build/smoke_csv fixtures/ci-smoke/model.json fixtures/ci-smoke/model.onnx "
