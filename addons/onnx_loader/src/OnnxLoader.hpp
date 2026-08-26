@@ -23,6 +23,7 @@ public:
 	~OnnxLoader() override;
 
 	bool load_model(const String &model_onnx_path);
+	void unload_model();
 	PackedFloat32Array predict(const PackedFloat32Array &input);
 	Array predict_array(const Array &input_data);
 

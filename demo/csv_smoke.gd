@@ -75,4 +75,6 @@ func _ready() -> void:
 		print("%5d  %-8s  %8d  %s" % [probe, expect_name, argmax, "Y" if hit else "."])
 	print("hit_rate=%d/%d" % [hits, n])
 	print("GODOT_ONNX_CSV_SMOKE_OK rows=%d" % n)
+	m.unload_model()
+	m = null
 	get_tree().quit(0 if n > 0 else 1)

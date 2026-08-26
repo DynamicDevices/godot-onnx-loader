@@ -29,6 +29,20 @@ static int ort_fail(const OrtApi *ort, OrtStatus *st, const char *what)
 	return -1;
 }
 
+/** ORT-allocated I/O names must not outlive the session; keep our own copies. */
+static char *copy_ort_name(const OrtApi *ort, OrtAllocator *alloc, char *ort_name)
+{
+	if (!ort_name) {
+		return NULL;
+	}
+	char *copy = strdup(ort_name);
+	OrtStatus *st = ort->AllocatorFree(alloc, ort_name);
+	if (st) {
+		ort->ReleaseStatus(st);
+	}
+	return copy;
+}
+
 static int64_t shape_elements(const int64_t *shape, size_t rank, int64_t batch)
 {
 	int64_t n = batch;
@@ -145,7 +159,13 @@ OnnxRuntime *onnx_runtime_create(const char *model_onnx_path)
 		     "GetInputName") ||
 	    ort_fail(ort,
 		     ort->SessionGetOutputName(rt->session, 0, rt->allocator, &rt->output_name),
-		     "GetOutputName") ||
+		     "GetOutputName")) {
+		onnx_runtime_destroy(rt);
+		return NULL;
+	}
+	rt->input_name = copy_ort_name(ort, rt->allocator, rt->input_name);
+	rt->output_name = copy_ort_name(ort, rt->allocator, rt->output_name);
+	if (!rt->input_name || !rt->output_name ||
 	    tensor_float_elements(ort, rt->session, 1, 0, &rt->input_size) != 0 ||
 	    tensor_float_elements(ort, rt->session, 0, 0, &rt->output_size) != 0) {
 		onnx_runtime_destroy(rt);
@@ -161,31 +181,24 @@ void onnx_runtime_destroy(OnnxRuntime *rt)
 		return;
 	}
 	const OrtApi *ort = rt->ort;
-	if (ort && rt->allocator) {
-		if (rt->input_name) {
-			OrtStatus *st = ort->AllocatorFree(rt->allocator, rt->input_name);
-			if (st) {
-				ort->ReleaseStatus(st);
-			}
-		}
-		if (rt->output_name) {
-			OrtStatus *st = ort->AllocatorFree(rt->allocator, rt->output_name);
-			if (st) {
-				ort->ReleaseStatus(st);
-			}
-		}
-	}
+	free(rt->input_name);
+	free(rt->output_name);
+	rt->input_name = rt->output_name = NULL;
 	if (ort) {
 		if (rt->session) {
 			ort->ReleaseSession(rt->session);
+			rt->session = NULL;
 		}
 		if (rt->opts) {
 			ort->ReleaseSessionOptions(rt->opts);
+			rt->opts = NULL;
 		}
 		if (rt->env) {
 			ort->ReleaseEnv(rt->env);
+			rt->env = NULL;
 		}
 	}
+	rt->ort = NULL;
 	free(rt);
 }
 

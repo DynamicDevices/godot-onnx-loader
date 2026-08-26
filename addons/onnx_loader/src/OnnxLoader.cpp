@@ -15,6 +15,7 @@ OnnxLoader::~OnnxLoader()
 void OnnxLoader::_bind_methods()
 {
 	ClassDB::bind_method(D_METHOD("load_model", "model_onnx_path"), &OnnxLoader::load_model);
+	ClassDB::bind_method(D_METHOD("unload_model"), &OnnxLoader::unload_model);
 	ClassDB::bind_method(D_METHOD("predict", "input_data"), &OnnxLoader::predict);
 	ClassDB::bind_method(D_METHOD("predict_array", "input_data"), &OnnxLoader::predict_array);
 	ClassDB::bind_method(D_METHOD("get_input_size"), &OnnxLoader::get_input_size);
@@ -23,13 +24,18 @@ void OnnxLoader::_bind_methods()
 
 bool OnnxLoader::load_model(const String &model_onnx_path)
 {
+	unload_model();
+	CharString path = model_onnx_path.utf8();
+	rt = onnx_runtime_create(path.get_data());
+	return rt != nullptr;
+}
+
+void OnnxLoader::unload_model()
+{
 	if (rt) {
 		onnx_runtime_destroy(rt);
 		rt = nullptr;
 	}
-	CharString path = model_onnx_path.utf8();
-	rt = onnx_runtime_create(path.get_data());
-	return rt != nullptr;
 }
 
 PackedFloat32Array OnnxLoader::predict(const PackedFloat32Array &input)
