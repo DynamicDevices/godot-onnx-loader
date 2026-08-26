@@ -1,0 +1,11 @@
+; Godot 4.3 demo — OnnxLoader CSV smoke against fixtures/ci-smoke/.
+config_version=5
+
+[application]
+config/name="OnnxLoaderCsvSmoke"
+run/main_scene="res://csv_smoke.tscn"
+config/features=PackedStringArray("4.3")
+
+[display]
+window/size/viewport_width=800
+window/size/viewport_height=450

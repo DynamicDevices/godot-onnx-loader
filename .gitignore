@@ -1,0 +1,8 @@
+build/
+addons/onnx_loader/bin/*.so
+addons/onnx_loader/bin/*.framework
+.sconsign.dblite
+**/*.os
+**/*.o
+result
+.direnv/
