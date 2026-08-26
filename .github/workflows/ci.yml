@@ -42,6 +42,8 @@ jobs:
             exit 1
           fi
           test -f addons/onnx_loader/bin/libonnx_loader.linux.template_debug.x86_64.so
+          test -f addons/onnx_loader/bin/libonnxruntime.so.1
+          readelf -d addons/onnx_loader/bin/libonnx_loader.linux.template_debug.x86_64.so | grep -q 'RPATH'
           scons platform=linux target=template_debug smoke-csv
           grep -q 'ONNX_LOADER_CSV_SMOKE_OK' /tmp/onnx-loader-smoke-csv.txt
           grep -q 'hit_rate=' /tmp/onnx-loader-smoke-csv.txt

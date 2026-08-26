@@ -1,5 +1,7 @@
+#define _GNU_SOURCE
 #include "onnx_runtime.h"
 
+#include <dlfcn.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -302,6 +304,19 @@ const char *onnx_runtime_ort_version(void)
 		return "unknown";
 	}
 	return base->GetVersionString();
+}
+
+const char *onnx_runtime_ort_library_path(void)
+{
+	const OrtApi *ort = ort_api();
+	if (!ort) {
+		return "unknown";
+	}
+	Dl_info info;
+	if (dladdr((void *)ort->ReleaseSession, &info) && info.dli_fname && info.dli_fname[0]) {
+		return info.dli_fname;
+	}
+	return "unknown";
 }
 
 uint32_t onnx_runtime_ort_api_version(void)

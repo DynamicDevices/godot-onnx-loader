@@ -1,5 +1,7 @@
 build/
 addons/onnx_loader/bin/*.so
+addons/onnx_loader/bin/libonnxruntime.so*
+addons/onnx_loader/bin/.ort-bundled.stamp
 addons/onnx_loader/bin/*.framework
 .sconsign.dblite
 **/*.os

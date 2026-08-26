@@ -6,7 +6,7 @@
 #define ONNX_LOADER_RUNTIME_H
 
 /** Bump when Julian needs to confirm a rebuilt .so is loaded. */
-#define ONNX_LOADER_BUILD "destroy-clean-20260826e"
+#define ONNX_LOADER_BUILD "ort-bundled-rpath-20260826f"
 
 #include <stdint.h>
 
@@ -28,6 +28,8 @@ void onnx_runtime_drop(OnnxRuntime *rt);
 void onnx_runtime_shutdown(void);
 
 const char *onnx_runtime_ort_version(void);
+/** Resolved filesystem path of the libonnxruntime loaded for this process. */
+const char *onnx_runtime_ort_library_path(void);
 uint32_t onnx_runtime_ort_api_version(void);
 const char *onnx_runtime_input_name(const OnnxRuntime *rt);
 const char *onnx_runtime_output_name(const OnnxRuntime *rt);

@@ -86,6 +86,7 @@ Dictionary OnnxLoader::get_diagnostics() const
 	Dictionary d;
 	d["loader_build"] = String(ONNX_LOADER_BUILD);
 	d["ort_version"] = String(onnx_runtime_ort_version());
+	d["ort_library_path"] = String(onnx_runtime_ort_library_path());
 	d["ort_api_version"] = (int64_t)onnx_runtime_ort_api_version();
 	if (rt) {
 		d["model_loaded"] = true;

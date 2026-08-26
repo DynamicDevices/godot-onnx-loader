@@ -56,12 +56,15 @@ godot_sources = [
     f"{addon_src}/register_types.cpp",
 ]
 
+# DT_RUNPATH is searched *after* LD_LIBRARY_PATH — Nix Godot wrappers often inject
+# nixpkgs libonnxruntime and we crash in ReleaseSession (ABI/heap mismatch).
+# Bundle ORT next to the .so and use DT_RPATH ($ORIGIN) so our build wins.
 ort_flags = {
     "CPPDEFINES": {"ONNX_LOADER_WITH_ORT": 1},
     "LIBPATH": [ort_lib],
-    "LIBS": ["onnxruntime", "m"],
+    "LIBS": ["onnxruntime", "m", "dl"],
     "LINKFLAGS": [
-        f"-Wl,-rpath,{ort_lib}",
+        "-Wl,--disable-new-dtags,-rpath,$ORIGIN",
         "-Wl,-z,noexecstack",
     ],
 }
@@ -85,7 +88,7 @@ env_cpp.Append(
 runtime_lib = env_c.StaticLibrary("build/libonnx_runtime", runtime_c)
 
 # Append addon libs; do not pass LIBS= to SharedLibrary (that drops libgodot-cpp).
-env_cpp.Append(LIBS=[runtime_lib, "onnxruntime", "m"])
+env_cpp.Append(LIBS=[runtime_lib, "onnxruntime", "m", "dl"])
 
 libname = "onnx_loader"
 if env_cpp["platform"] == "macos":
@@ -120,4 +123,24 @@ smoke_csv_run = env_c.Command(
 )
 
 Alias("smoke-csv", smoke_csv_run)
-Default(library)
+
+
+def _bundle_ort_libs(target, source, env):
+    import shutil
+
+    dest_dir = Dir("addons/onnx_loader/bin").abspath
+    os.makedirs(dest_dir, exist_ok=True)
+    for name in ("libonnxruntime.so.1", "libonnxruntime.so"):
+        src = os.path.join(ort_lib, name)
+        if os.path.isfile(src):
+            shutil.copy2(src, os.path.join(dest_dir, name))
+    return None
+
+
+bundle_ort = env.Command(
+    "addons/onnx_loader/bin/.ort-bundled.stamp",
+    library,
+    _bundle_ort_libs,
+)
+Alias("bundle-ort", bundle_ort)
+Default(library, bundle_ort)

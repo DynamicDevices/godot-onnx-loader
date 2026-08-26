@@ -18,8 +18,13 @@ if [[ ! -f "$ROOT/demo/addons/onnx_loader/bin/libonnx_loader.linux.template_debu
 	echo "Build addon first: ORT_ROOT=$ORT_ROOT scons platform=linux target=template_debug" >&2
 	exit 1
 fi
+if [[ ! -f "$ROOT/addons/onnx_loader/bin/libonnxruntime.so.1" ]]; then
+	echo "Bundled ORT missing — rebuild: scons platform=linux target=template_debug" >&2
+	exit 1
+fi
 
-export LD_LIBRARY_PATH="$ORT_ROOT/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+# Prefer $ORIGIN-bundled ORT (RPATH) — do not override with LD_LIBRARY_PATH on Nix Godot.
+unset LD_LIBRARY_PATH
 cd "$ROOT/demo"
 "$GODOT" --headless --path . --quit-after 1 res://csv_smoke.tscn 2>&1 | tee "$OUT"
 grep -q GODOT_ONNX_CSV_SMOKE_OK "$OUT"
