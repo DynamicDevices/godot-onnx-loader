@@ -6,7 +6,7 @@
 #define ONNX_LOADER_RUNTIME_H
 
 /** Bump when Julian needs to confirm a rebuilt .so is loaded. */
-#define ONNX_LOADER_BUILD "session-unload-20260826c"
+#define ONNX_LOADER_BUILD "leak-exit-20260826d"
 
 #include <stdint.h>
 

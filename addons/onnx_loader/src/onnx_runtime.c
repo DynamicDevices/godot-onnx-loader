@@ -295,13 +295,14 @@ void onnx_runtime_shutdown(void)
 {
 	const OrtApi *ort = g_ort;
 	teardown_log("shutdown-enter");
-	while (g_orphan_n > 0) {
-		OrtSession *session = g_orphan_sessions[--g_orphan_n];
-		if (ort && session) {
-			teardown_log("ReleaseSession-shutdown");
-			ort->ReleaseSession(session);
-			teardown_log("ReleaseSession-shutdown-done");
-		}
+	if (g_orphan_n > 0) {
+		fprintf(stderr,
+			"ONNX_LOADER_TEARDOWN leak %d session(s) on exit (ReleaseSession unsafe under Godot)\n",
+			g_orphan_n);
+		g_orphan_n = 0;
+		g_env_users = 0;
+		teardown_log("shutdown-exit-leak");
+		return;
 	}
 	if (g_env_users != 0) {
 		fprintf(stderr, "onnx_runtime_shutdown: %d live session(s)\n", g_env_users);
