@@ -30,7 +30,8 @@ out_q=$(printf '%q' "$OUT")
 nix shell github:nixos/nixpkgs/nixos-25.11#patchelf github:nixos/nixpkgs/nixos-25.11#gcc \
 	github:nixos/nixpkgs/nixos-26.05#godot_4_6 --command bash -c "
 set -euo pipefail
-export NIX_CXX_LIB=\$(dirname \"\$(dirname \"\$(readlink -f \"\$(command -v g++)\")\")\")/lib
+source $root_q/tools/nix_cxx_lib.sh
+export NIX_CXX_LIB=\$(resolve_nix_cxx_lib || true)
 if [[ -z \"\$NIX_CXX_LIB\" || ! -d \"\$NIX_CXX_LIB\" ]]; then
 	echo \"godot_46_ms_ort: NIX_CXX_LIB unresolved (g++=\$(command -v g++ || echo missing))\" >&2
 	exit 1

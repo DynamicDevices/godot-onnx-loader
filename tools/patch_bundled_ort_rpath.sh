@@ -3,13 +3,9 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ORT_SO="$ROOT/addons/onnx_loader/bin/libonnxruntime.so.1"
-CXX_LIB="${NIX_CXX_LIB:-}"
-
-if [[ -z "$CXX_LIB" || ! -d "$CXX_LIB" ]]; then
-	if command -v g++ >/dev/null 2>&1; then
-		CXX_LIB="$(dirname "$(dirname "$(readlink -f "$(command -v g++)")")")/lib"
-	fi
-fi
+# shellcheck source=tools/nix_cxx_lib.sh
+source "$ROOT/tools/nix_cxx_lib.sh"
+CXX_LIB="$(resolve_nix_cxx_lib || true)"
 
 if [[ ! -f "$ORT_SO" ]]; then
 	echo "patch_bundled_ort_rpath: missing $ORT_SO (run scons first)" >&2
