@@ -45,10 +45,11 @@ bash tools/godot_46_ms_ort.sh   # headless 4.6 smoke (Nix: patchelf libstdc++ in
 ```
 
 Run `godot_46_ms_ort.sh` from a **plain shell** (not wrapped in `nix develop`). The script
-opens its own `nix shell` for patchelf + Godot 4.6 with `NIX_CXX_LIB` set. If you build
-with `nix develop` first, you still need that script (or manually `REQUIRE_NIX_PATCH=1 bash
-tools/patch_bundled_ort_rpath.sh` with `NIX_CXX_LIB` from nix `g++`) before Godot 4.6 —
-otherwise bundled ORT dlopen fails with `(null)`.
+opens its own `nix shell` (nixpkgs **26.05** — same rev as `godot_4_6`) for patchelf,
+copies `libstdc++.so.6`/`libgcc_s.so.1` beside bundled ORT, and runs headless csv_smoke.
+If you build with `nix develop` first, you still need that script (or manually
+`REQUIRE_NIX_PATCH=1 bash tools/patch_bundled_ort_rpath.sh`) before Godot 4.6 —
+otherwise bundled ORT dlopen fails with `(null)` or `free(): invalid size` on teardown.
 
 Or use the **portable zip** CI artifact (addon + MS ORT built together). For daily
 work, `nix develop` + `$GODOT_BIN` (~4.5) + `bash tools/godot_csv_smoke.sh` stays green.

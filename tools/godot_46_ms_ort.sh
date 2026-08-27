@@ -6,6 +6,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ORT_MS="${ORT_MS:-/tmp/onnxruntime-linux-x64-1.20.1}"
 OUT="${OUT:-/tmp/godot-onnx-loader-csv-smoke-46-ms.txt}"
+# Godot 4.6 + gcc runtime must come from the same nixpkgs rev.
+NIXPKGS="${NIXPKGS:-github:nixos/nixpkgs/nixos-26.05}"
 
 cd "$ROOT"
 ORT_ROOT="$ORT_MS" bash tools/fetch_ms_ort.sh >/dev/null
@@ -14,9 +16,19 @@ export ORT_BUNDLE=1
 unset ONNX_ORT_BIN
 git submodule update --init --recursive
 
-# .ort-bundled.stamp can be stale if libonnxruntime.so.1 was removed — force rebundle.
+# Stale bundled gcc copies / stamp confuse rebuilds.
 rm -f addons/onnx_loader/bin/.ort-bundled.stamp
-scons -j"$(nproc)" platform=linux target=template_debug smoke-dlopen-ort
+rm -f addons/onnx_loader/bin/libstdc++.so.6 addons/onnx_loader/bin/libgcc_s.so.1
+
+_scons() {
+	if command -v scons >/dev/null 2>&1; then
+		scons "$@"
+	else
+		nix shell "${NIXPKGS}#scons" "${NIXPKGS}#gcc" --command scons "$@"
+	fi
+}
+
+_scons -j"$(nproc)" platform=linux target=template_debug smoke-dlopen-ort
 
 ORT_SO="$ROOT/addons/onnx_loader/bin/libonnxruntime.so.1"
 if [[ ! -f "$ORT_SO" ]]; then
@@ -26,9 +38,9 @@ fi
 
 root_q=$(printf '%q' "$ROOT")
 out_q=$(printf '%q' "$OUT")
+nixpkgs_q=$(printf '%q' "$NIXPKGS")
 
-nix shell github:nixos/nixpkgs/nixos-25.11#patchelf github:nixos/nixpkgs/nixos-25.11#gcc \
-	github:nixos/nixpkgs/nixos-26.05#godot_4_6 --command bash -c "
+nix shell "${NIXPKGS}#patchelf" "${NIXPKGS}#gcc" "${NIXPKGS}#godot_4_6" --command bash -c "
 set -euo pipefail
 source $root_q/tools/nix_cxx_lib.sh
 export NIX_CXX_LIB=\$(resolve_nix_cxx_lib || true)
@@ -41,13 +53,20 @@ if ! patchelf --print-rpath $root_q/addons/onnx_loader/bin/libonnxruntime.so.1 |
 	echo \"godot_46_ms_ort: bundled ORT missing libstdc++ rpath after patch\" >&2
 	exit 1
 fi
-# smoke-dlopen-ort already ran in scons above — Godot 4.6 csv_smoke next.
+if ! patchelf --print-rpath $root_q/addons/onnx_loader/bin/libonnxruntime.so.1 | tr ':' '\\n' | grep -Fxq '\$ORIGIN'; then
+	echo \"godot_46_ms_ort: bundled ORT missing \\\$ORIGIN rpath after patch\" >&2
+	exit 1
+fi
+test -f $root_q/addons/onnx_loader/bin/libstdc++.so.6
+
+# Do not unset LD_LIBRARY_PATH — Godot 4.6 nix wrapper sets its own FHS env.
 unset ONNX_ORT_BIN
-unset LD_LIBRARY_PATH
+export ONNX_LOADER_SKIP_SESSION_RELEASE=1
 G=\$(command -v godot4 || command -v godot || true)
 test -n \"\$G\" && test -x \"\$G\"
 cd $root_q/demo
 \"\$G\" --headless --path . --quit-after 1 res://csv_smoke.tscn 2>&1 | tee $out_q
 grep -q GODOT_ONNX_CSV_SMOKE_OK $out_q
+bash $root_q/tools/check_glibc_free.sh $out_q
 echo GODOT_46_MS_ORT_SMOKE_OK
 "
