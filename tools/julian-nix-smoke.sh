@@ -11,6 +11,7 @@ echo "=== nix develop + build + smoke ==="
 nix develop --command bash -c '
   set -euo pipefail
   scons platform=linux target=template_debug
+  bash tools/patch_bundled_ort_rpath.sh
   scons platform=linux target=template_debug smoke-dlopen-ort
   bash tools/godot_csv_smoke.sh
 '

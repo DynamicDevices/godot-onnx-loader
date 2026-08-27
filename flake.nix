@@ -38,6 +38,7 @@
             git
             curl
             python3
+            patchelf
           ];
           shellHook = ''
             export ORT_ROOT="${ortMs}"
@@ -45,11 +46,13 @@
             export C_INCLUDE_PATH="${ortMs}/include''${C_INCLUDE_PATH:+:}$C_INCLUDE_PATH"
             export LIBRARY_PATH="${ortMs}/lib''${LIBRARY_PATH:+:}$LIBRARY_PATH"
             export LD_LIBRARY_PATH="${ortMs}/lib''${LD_LIBRARY_PATH:+:}$LD_LIBRARY_PATH"
+            export NIX_CXX_LIB="${pkgs.stdenv.cc.cc.lib}/lib"
             export GODOT_BIN="${godotBin}"
             echo "godot-onnx-loader nix develop (ORT ${ortVersion} MS + Godot ${godotVersion} official)"
             echo "  ORT_ROOT=$ORT_ROOT"
             echo "  GODOT_BIN=$GODOT_BIN"
-            echo "  NOTE: nixpkgs godot_4 breaks ORT ReleaseSession — use GODOT_BIN above"
+            echo "  NIX_CXX_LIB=$NIX_CXX_LIB  (for MS ORT libstdc++)"
+            echo "  after scons: bash tools/patch_bundled_ort_rpath.sh"
             echo "  git submodule update --init --recursive"
             echo "  scons platform=linux target=template_debug"
             echo "  scons smoke-csv"
