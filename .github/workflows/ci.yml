@@ -51,7 +51,30 @@ jobs:
           grep -q 'hit_rate=' /tmp/onnx-loader-smoke-csv.txt
           grep -q 'ONNX_DLOPEN_TEARDOWN_OK' /tmp/onnx-loader-smoke-dlopen.txt
 
-  nixos-godot-smoke:
+  package-linux-portable:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: install scons + zip
+        run: pip install scons
+
+      - name: build portable zip (addon + MS ORT)
+        run: |
+          set -euo pipefail
+          chmod +x tools/fetch_ms_ort.sh tools/package_linux_portable.sh
+          bash tools/package_linux_portable.sh
+          test -f /tmp/godot-onnx-loader-linux-x64-portable.zip
+
+      - name: Upload portable Linux package
+        uses: actions/upload-artifact@v7
+        with:
+          name: godot-onnx-loader-linux-x64-portable
+          path: /tmp/godot-onnx-loader-linux-x64-portable.zip
+          if-no-files-found: error
+          retention-days: 30
     runs-on: [self-hosted, Linux, nixos, esl-nixos]
     env:
       TMPDIR: /var/tmp

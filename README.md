@@ -39,6 +39,18 @@ via `ONNX_ORT_BIN`).
 
 Ubuntu CI still bundles the Microsoft ORT 1.20.1 tarball for non-Nix hosts.
 
+**Portable download (generic Linux):** CI job `package-linux-portable` uploads a zip
+with `addons/onnx_loader/` + bundled MS ORT. Build locally:
+
+```bash
+bash tools/package_linux_portable.sh
+# → /tmp/godot-onnx-loader-linux-x64-portable.zip
+```
+
+Our GDExtension static-links libstdc++; MS ORT still uses the host libstdc++.so.6
+(same as Godot on normal distros). A fully static ORT would require compiling
+onnxruntime from source (webrtc-native pattern) — not shipped by Microsoft.
+
 `scons` copies `libonnxruntime.so.1` into `addons/onnx_loader/bin/` when bundling
 (non-Nix). The GDExtension **dlopens** ORT at runtime. After rebuild, check
 `get_diagnostics()["ort_library_path"]` — on Nix expect a `/nix/store/...` path.
