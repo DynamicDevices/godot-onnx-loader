@@ -56,11 +56,15 @@ godot_sources = [
     f"{addon_src}/register_types.cpp",
 ]
 
-# DT_RUNPATH is searched *after* LD_LIBRARY_PATH — Nix Godot wrappers often inject
-# nixpkgs libonnxruntime and we crash in ReleaseSession (ABI/heap mismatch).
-# Bundle ORT next to the .so and use DT_RPATH ($ORIGIN) so our build wins.
-ort_flags = {
+# GDExtension: dlopen bundled ORT at runtime — do NOT link libonnxruntime into the
+# .so (NEEDED + dlopen = two ORT instances → ReleaseSession heap crash under Godot).
+ort_inc_flags = {
     "CPPDEFINES": {"ONNX_LOADER_WITH_ORT": 1},
+    "CPPPATH": [addon_src, ort_inc],
+}
+
+smoke_link_flags = {
+    "LIBPATH": [ort_lib],
     "LINKFLAGS": [
         "-Wl,--disable-new-dtags,-rpath,$ORIGIN",
         "-Wl,-z,noexecstack",
@@ -70,17 +74,16 @@ ort_flags = {
 # C only — no godot headers; strict warnings.
 env_c = env.Clone()
 env_c.Append(
-    CPPPATH=[addon_src, ort_inc],
     CCFLAGS=["-std=c11", "-Wall", "-Wextra", "-Werror", "-fPIC"],
-    **ort_flags,
+    **ort_inc_flags,
 )
 
 # C++ GDExtension bindings — Werror on our code; suppress godot-cpp header noise.
 env_cpp = env.Clone()
 env_cpp.Append(
-    CPPPATH=[addon_src, ort_inc],
-    CXXFLAGS=["-Wall", "-Wextra", "-Werror", "-Wno-unused-parameter"],
-    **ort_flags,
+    CXXFLAGS=["-Wall", "-Wextra", "-Werror", "-Wno-unused-parameter", "-fno-gnu-unique"],
+    **ort_inc_flags,
+    LINKFLAGS=["-Wl,-z,noexecstack"],
 )
 
 runtime_lib = env_c.StaticLibrary("build/libonnx_runtime", runtime_c)
@@ -109,13 +112,18 @@ else:
         source=godot_sources,
     )
 
-smoke_csv = env_c.Program("build/smoke_csv", "tools/smoke_csv.c", LIBS=[runtime_lib, "stdc++", "m", "dl"])
+smoke_csv = env_c.Program(
+    "build/smoke_csv",
+    "tools/smoke_csv.c",
+    LIBS=[runtime_lib, "stdc++", "m", "dl"],
+    **smoke_link_flags,
+)
 
 smoke_dlopen = env_c.Program(
     "build/smoke_dlopen_ort",
     "tools/smoke_dlopen_ort.c",
-    LINKFLAGS=["-Wl,--disable-new-dtags,-rpath,$ORIGIN"],
     LIBS=["stdc++", "dl"],
+    **smoke_link_flags,
 )
 
 _wrap = "bash tools/with_bundled_ort.sh"

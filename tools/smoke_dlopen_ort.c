@@ -32,6 +32,9 @@ int main(int argc, char **argv)
 
 	char libpath[4096];
 	snprintf(libpath, sizeof(libpath), "%s/libonnxruntime.so.1", argv[1]);
+#ifndef RTLD_DEEPBIND
+#define RTLD_DEEPBIND 0
+#endif
 	void *h = dlopen(libpath, RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
 	if (!h) {
 		fprintf(stderr, "dlopen %s: %s\n", libpath, dlerror());

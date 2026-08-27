@@ -22,6 +22,14 @@
           mkdir -p $out
           tar -C $out --strip-components=1 -xzf ${ortTgz}
         '';
+        # nixpkgs godot_4 aborts in ORT ReleaseSession (free(): invalid pointer).
+        # Official upstream binary on the same NixOS host tears down cleanly.
+        godotVersion = "4.5.1";
+        godotOfficial = pkgs.fetchzip {
+          url = "https://github.com/godotengine/godot/releases/download/${godotVersion}-stable/Godot_v${godotVersion}-stable_linux.x86_64.zip";
+          sha256 = "sha256-0B7p4Tl0eA1ENkERHz3kJKOhq2r5p0GUygCxQpf4S0E=";
+        };
+        godotBin = "${godotOfficial}/Godot_v${godotVersion}-stable_linux.x86_64";
       in {
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
@@ -30,7 +38,6 @@
             git
             curl
             python3
-            godot_4
           ];
           shellHook = ''
             export ORT_ROOT="${ortMs}"
@@ -38,10 +45,11 @@
             export C_INCLUDE_PATH="${ortMs}/include''${C_INCLUDE_PATH:+:}$C_INCLUDE_PATH"
             export LIBRARY_PATH="${ortMs}/lib''${LIBRARY_PATH:+:}$LIBRARY_PATH"
             export LD_LIBRARY_PATH="${ortMs}/lib''${LD_LIBRARY_PATH:+:}$LD_LIBRARY_PATH"
-            export GODOT_BIN="${pkgs.godot_4}/bin/godot4"
-            echo "godot-onnx-loader nix develop (ORT ${ortVersion} MS prebuilt — NixOS-safe dlopen)"
+            export GODOT_BIN="${godotBin}"
+            echo "godot-onnx-loader nix develop (ORT ${ortVersion} MS + Godot ${godotVersion} official)"
             echo "  ORT_ROOT=$ORT_ROOT"
             echo "  GODOT_BIN=$GODOT_BIN"
+            echo "  NOTE: nixpkgs godot_4 breaks ORT ReleaseSession — use GODOT_BIN above"
             echo "  git submodule update --init --recursive"
             echo "  scons platform=linux target=template_debug"
             echo "  scons smoke-csv"
@@ -49,6 +57,10 @@
             if [ ! -f "$ORT_ROOT/include/onnxruntime_c_api.h" ] && \
                [ ! -f "$ORT_ROOT/include/onnxruntime/onnxruntime_c_api.h" ]; then
               echo "  ERROR: onnxruntime_c_api.h not under ORT_ROOT" >&2
+              exit 1
+            fi
+            if [ ! -x "$GODOT_BIN" ]; then
+              echo "  ERROR: GODOT_BIN not executable: $GODOT_BIN" >&2
               exit 1
             fi
           '';

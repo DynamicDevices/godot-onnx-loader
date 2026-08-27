@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Headless csv_smoke through Godot — run before asking Julian to rebuild.
+# Uses GODOT_BIN from nix develop (official Godot 4.5.1 — NOT nixpkgs godot_4).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 GODOT="${GODOT_BIN:-${GODOT:-${HOME}/Downloads/Godot_v4.6.1-stable_linux.x86_64}}"
@@ -7,7 +8,7 @@ ORT_ROOT="${ORT_ROOT:-/tmp/onnxruntime-linux-x64-1.20.1}"
 OUT="${OUT:-/tmp/godot-onnx-loader-csv-smoke.txt}"
 
 if [[ ! -x "$GODOT" ]]; then
-	echo "GODOT_BIN must point at Godot 4.x (nix develop sets this to 4.5.1)" >&2
+	echo "GODOT_BIN must point at Godot 4.x official binary (nix develop sets 4.5.1)" >&2
 	exit 1
 fi
 if [[ ! -f "$ORT_ROOT/lib/libonnxruntime.so.1" ]]; then

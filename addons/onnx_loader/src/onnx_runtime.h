@@ -6,7 +6,7 @@
 #define ONNX_LOADER_RUNTIME_H
 
 /** Bump when Julian needs to confirm a rebuilt .so is loaded. */
-#define ONNX_LOADER_BUILD "ort-per-session-env-20260827b"
+#define ONNX_LOADER_BUILD "ort-dlopen-godot-official-20260827f"
 
 #include <stdint.h>
 

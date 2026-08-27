@@ -15,6 +15,6 @@ nix develop --command bash -c '
   bash tools/godot_csv_smoke.sh
 '
 echo "=== check diagnostics in output above ==="
-echo "Expect: loader_build ort-deepbind-*"
-echo "Expect: ort_library_path ending in addons/onnx_loader/bin/libonnxruntime.so.1"
+echo "Expect: loader_build ort-dlopen-godot-official-*"
+echo "Expect: GODOT_BIN official Godot 4.5.1 (NOT nixpkgs godot_4)"
 echo "Expect: GODOT_ONNX_CSV_SMOKE_OK and NO free() abort"

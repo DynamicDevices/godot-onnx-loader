@@ -32,11 +32,14 @@ On NixOS, **do not** point `ORT_ROOT` at nixpkgs `onnxruntime` for Godot — the
 `libonnxruntime.so.1` requests an executable stack and Godot dlopen fails. The flake
 and CI both use the Microsoft linux-x64 tarball instead.
 
-`scons` copies `libonnxruntime.so.1` into `addons/onnx_loader/bin/` and links the
-GDExtension with **`RPATH=$ORIGIN`** (not `RUNPATH`). Nix Godot wrappers often set
-`LD_LIBRARY_PATH` to nixpkgs ORT; with `RUNPATH` that wrong library loads and
-`ReleaseSession` can crash with `free(): invalid size`. After rebuild, check
-`get_diagnostics()["ort_library_path"]` points at `.../addons/onnx_loader/bin/libonnxruntime.so.1`.
+`scons` copies `libonnxruntime.so.1` into `addons/onnx_loader/bin/`. The
+GDExtension **dlopens** that copy at runtime (no link-time `NEEDED` on
+`libonnxruntime`). After rebuild, check `get_diagnostics()["ort_library_path"]`
+points at `.../addons/onnx_loader/bin/libonnxruntime.so.1`.
+
+**NixOS Godot:** use the **official** Godot binary from `nix develop`
+(`GODOT_BIN`). The nixpkgs `godot_4` wrapper aborts in ORT `ReleaseSession`
+(`free(): invalid pointer`) on the same machine where official 4.5.1 is clean.
 
 Godot 4.3 (optional):
 
