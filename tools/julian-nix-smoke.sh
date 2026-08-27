@@ -7,13 +7,14 @@ echo "=== git ==="
 git pull --ff-only
 echo "=== clean bundled ORT (fix Permission denied) ==="
 rm -f addons/onnx_loader/bin/libonnxruntime.so*
-echo "=== nix develop + build ==="
+echo "=== nix develop + build + smoke ==="
 nix develop --command bash -c '
   set -euo pipefail
   scons platform=linux target=template_debug
+  scons platform=linux target=template_debug smoke-dlopen-ort
   bash tools/godot_csv_smoke.sh
 '
 echo "=== check diagnostics in output above ==="
-echo "Expect: loader_build ort-deepbind-20260826g (or later)"
+echo "Expect: loader_build ort-deepbind-*"
 echo "Expect: ort_library_path ending in addons/onnx_loader/bin/libonnxruntime.so.1"
-echo "Expect: GODOT_ONNX_CSV_SMOKE_OK and NO free(): invalid size"
+echo "Expect: GODOT_ONNX_CSV_SMOKE_OK and NO free() abort"

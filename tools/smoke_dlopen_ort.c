@@ -32,13 +32,19 @@ int main(int argc, char **argv)
 
 	char libpath[4096];
 	snprintf(libpath, sizeof(libpath), "%s/libonnxruntime.so.1", argv[1]);
-	void *h = dlopen(libpath, RTLD_NOW | RTLD_GLOBAL);
+	void *h = dlopen(libpath, RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
 	if (!h) {
 		fprintf(stderr, "dlopen %s: %s\n", libpath, dlerror());
 		return 1;
 	}
 
-	const OrtApi *api = OrtGetApiBase()->GetApi(ORT_API_VERSION);
+	typedef const OrtApiBase *(*OrtGetApiBaseFn)(void);
+	OrtGetApiBaseFn get_base = (OrtGetApiBaseFn)dlsym(h, "OrtGetApiBase");
+	if (!get_base) {
+		fprintf(stderr, "dlsym OrtGetApiBase: %s\n", dlerror());
+		return 1;
+	}
+	const OrtApi *api = get_base()->GetApi(ORT_API_VERSION);
 	if (!api) {
 		fprintf(stderr, "GetApi failed\n");
 		return 1;

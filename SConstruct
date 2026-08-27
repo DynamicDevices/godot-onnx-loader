@@ -61,8 +61,6 @@ godot_sources = [
 # Bundle ORT next to the .so and use DT_RPATH ($ORIGIN) so our build wins.
 ort_flags = {
     "CPPDEFINES": {"ONNX_LOADER_WITH_ORT": 1},
-    "LIBPATH": [ort_lib],
-    "LIBS": ["onnxruntime", "m", "dl"],
     "LINKFLAGS": [
         "-Wl,--disable-new-dtags,-rpath,$ORIGIN",
         "-Wl,-z,noexecstack",
@@ -88,7 +86,7 @@ env_cpp.Append(
 runtime_lib = env_c.StaticLibrary("build/libonnx_runtime", runtime_c)
 
 # Append addon libs; do not pass LIBS= to SharedLibrary (that drops libgodot-cpp).
-env_cpp.Append(LIBS=[runtime_lib, "onnxruntime", "m", "dl"])
+env_cpp.Append(LIBS=[runtime_lib, "m", "dl"])
 
 libname = "onnx_loader"
 if env_cpp["platform"] == "macos":
@@ -111,14 +109,16 @@ else:
         source=godot_sources,
     )
 
-smoke_csv = env_c.Program("build/smoke_csv", "tools/smoke_csv.c", LIBS=[runtime_lib, "onnxruntime", "m"])
+smoke_csv = env_c.Program("build/smoke_csv", "tools/smoke_csv.c", LIBS=[runtime_lib, "stdc++", "m", "dl"])
 
 smoke_dlopen = env_c.Program(
     "build/smoke_dlopen_ort",
     "tools/smoke_dlopen_ort.c",
     LINKFLAGS=["-Wl,--disable-new-dtags,-rpath,$ORIGIN"],
-    LIBS=["onnxruntime", "dl"],
+    LIBS=["stdc++", "dl"],
 )
+
+_wrap = "bash tools/with_bundled_ort.sh"
 
 
 def _bundle_ort_libs(target, source, env):
@@ -153,7 +153,7 @@ model_onnx = "fixtures/ci-smoke/model.onnx"
 smoke_csv_run = env_c.Command(
     "build/smoke_csv.stamp",
     [smoke_csv, bundle_ort, csv_path],
-    "LD_LIBRARY_PATH=addons/onnx_loader/bin ./build/smoke_csv fixtures/ci-smoke/model.json "
+    f"{_wrap} ./build/smoke_csv fixtures/ci-smoke/model.json "
     "fixtures/ci-smoke/model.onnx "
     f"{csv_path} | tee /tmp/onnx-loader-smoke-csv.txt && "
     "grep -q ONNX_LOADER_CSV_SMOKE_OK /tmp/onnx-loader-smoke-csv.txt",
@@ -162,7 +162,7 @@ smoke_csv_run = env_c.Command(
 smoke_dlopen_run = env_c.Command(
     "build/smoke_dlopen_ort.stamp",
     [smoke_dlopen, bundle_ort, model_onnx],
-    "LD_LIBRARY_PATH=addons/onnx_loader/bin ./build/smoke_dlopen_ort addons/onnx_loader/bin "
+    f"{_wrap} ./build/smoke_dlopen_ort addons/onnx_loader/bin "
     "fixtures/ci-smoke/model.onnx | tee /tmp/onnx-loader-smoke-dlopen.txt && "
     "grep -q ONNX_DLOPEN_TEARDOWN_OK /tmp/onnx-loader-smoke-dlopen.txt",
 )

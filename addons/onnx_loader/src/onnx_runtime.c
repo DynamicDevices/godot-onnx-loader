@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "onnxruntime_c_api.h"
 
@@ -30,6 +31,8 @@ static int g_env_users;
 static OrtSession *g_orphan_sessions[ORPHAN_MAX];
 static int g_orphan_n;
 
+static const OrtApi *ort_api(void);
+
 static void teardown_log(const char *stage)
 {
 	fprintf(stderr, "ONNX_LOADER_TEARDOWN %s\n", stage);
@@ -46,6 +49,45 @@ static int ort_fail(const OrtApi *ort, OrtStatus *st, const char *what)
 	return -1;
 }
 
+/** Bundled libonnxruntime.so.1 beside libonnx_loader…so, or host-smoke layout. */
+static int resolve_bundled_ort_path(char *out, size_t out_cap)
+{
+	const char *env = getenv("ONNX_ORT_BIN");
+	if (env && env[0]) {
+		snprintf(out, out_cap, "%s", env);
+		return 0;
+	}
+
+	Dl_info info;
+	if (dladdr((void *)&ort_api, &info) && info.dli_fname && info.dli_fname[0] &&
+	    strstr(info.dli_fname, "libonnx_loader")) {
+		char addon_path[4096];
+		snprintf(addon_path, sizeof(addon_path), "%s", info.dli_fname);
+		char *slash = strrchr(addon_path, '/');
+		if (slash) {
+			size_t dir_len = (size_t)(slash - addon_path);
+			int n = snprintf(out, out_cap, "%.*s/libonnxruntime.so.1", (int)dir_len,
+					 addon_path);
+			if (n > 0 && (size_t)n < out_cap) {
+				return 0;
+			}
+		}
+	}
+
+	static const char *candidates[] = {
+		"addons/onnx_loader/bin/libonnxruntime.so.1",
+		"demo/addons/onnx_loader/bin/libonnxruntime.so.1",
+		NULL,
+	};
+	for (size_t i = 0; candidates[i]; i++) {
+		if (access(candidates[i], R_OK) == 0) {
+			snprintf(out, out_cap, "%s", candidates[i]);
+			return 0;
+		}
+	}
+	return -1;
+}
+
 static const OrtApi *ort_api(void)
 {
 	if (g_ort) {
@@ -53,45 +95,41 @@ static const OrtApi *ort_api(void)
 	}
 
 	typedef const OrtApiBase *(*OrtGetApiBaseFn)(void);
-	OrtGetApiBaseFn get_base = OrtGetApiBase;
+	OrtGetApiBaseFn get_base = NULL;
 
 	if (!g_ort_dlhandle) {
-		Dl_info info;
-		if (dladdr((void *)&ort_api, &info) && info.dli_fname && info.dli_fname[0]) {
-			char addon_path[4096];
-			snprintf(addon_path, sizeof(addon_path), "%s", info.dli_fname);
-			char *slash = strrchr(addon_path, '/');
-			if (slash) {
-				size_t dir_len = (size_t)(slash - addon_path);
-				int n = snprintf(g_ort_libpath, sizeof(g_ort_libpath), "%.*s/libonnxruntime.so.1",
-						 (int)dir_len, addon_path);
-				if (n <= 0 || (size_t)n >= sizeof(g_ort_libpath)) {
-					g_ort_libpath[0] = '\0';
-				} else {
+		if (resolve_bundled_ort_path(g_ort_libpath, sizeof(g_ort_libpath)) != 0) {
+			fprintf(stderr, "resolve bundled ORT path failed\n");
+			return NULL;
+		}
 #ifndef RTLD_DEEPBIND
 #define RTLD_DEEPBIND 0
 #endif
-				g_ort_dlhandle = dlopen(g_ort_libpath, RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
-				if (g_ort_dlhandle) {
-					get_base = (OrtGetApiBaseFn)dlsym(g_ort_dlhandle, "OrtGetApiBase");
-					if (!get_base) {
-						fprintf(stderr, "dlsym OrtGetApiBase: %s\n", dlerror());
-						dlclose(g_ort_dlhandle);
-						g_ort_dlhandle = NULL;
-						get_base = OrtGetApiBase;
-						g_ort_libpath[0] = '\0';
-					}
-				} else {
-					fprintf(stderr, "dlopen bundled ORT %s: %s\n", g_ort_libpath,
-						dlerror() ? dlerror() : "(null)");
-					g_ort_libpath[0] = '\0';
-				}
-				}
-			}
+		g_ort_dlhandle = dlopen(g_ort_libpath, RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
+		if (!g_ort_dlhandle) {
+			fprintf(stderr, "dlopen bundled ORT %s: %s\n", g_ort_libpath,
+				dlerror() ? dlerror() : "(null)");
+			g_ort_libpath[0] = '\0';
+			return NULL;
 		}
+		get_base = (OrtGetApiBaseFn)dlsym(g_ort_dlhandle, "OrtGetApiBase");
+		if (!get_base) {
+			fprintf(stderr, "dlsym OrtGetApiBase: %s\n", dlerror() ? dlerror() : "(null)");
+			dlclose(g_ort_dlhandle);
+			g_ort_dlhandle = NULL;
+			g_ort_libpath[0] = '\0';
+			return NULL;
+		}
+	} else {
+		get_base = (OrtGetApiBaseFn)dlsym(g_ort_dlhandle, "OrtGetApiBase");
 	}
 
-	const OrtApiBase *base = get_base ? get_base() : NULL;
+	if (!get_base) {
+		fprintf(stderr, "bundled ORT not loaded (no link-time libonnxruntime fallback)\n");
+		return NULL;
+	}
+
+	const OrtApiBase *base = get_base();
 	if (!base) {
 		fprintf(stderr, "OrtGetApiBase failed\n");
 		return NULL;
@@ -346,11 +384,24 @@ void onnx_runtime_shutdown(void)
 
 const char *onnx_runtime_ort_version(void)
 {
-	const OrtApiBase *base = OrtGetApiBase();
-	if (!base || !base->GetVersionString) {
+	const OrtApi *ort = ort_api();
+	if (!ort) {
 		return "unknown";
 	}
-	return base->GetVersionString();
+	Dl_info info;
+	if (dladdr((void *)ort->ReleaseSession, &info) && info.dli_fname && info.dli_fname[0]) {
+		/* Version string lives in the same DSO as ReleaseSession. */
+		typedef const OrtApiBase *(*OrtGetApiBaseFn)(void);
+		if (g_ort_dlhandle) {
+			OrtGetApiBaseFn get_base =
+				(OrtGetApiBaseFn)dlsym(g_ort_dlhandle, "OrtGetApiBase");
+			const OrtApiBase *base = get_base ? get_base() : NULL;
+			if (base && base->GetVersionString) {
+				return base->GetVersionString();
+			}
+		}
+	}
+	return "unknown";
 }
 
 const char *onnx_runtime_ort_library_path(void)
