@@ -157,6 +157,11 @@ def _bundle_ort_libs(target, source, env):
             stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH,
         )
         os.replace(tmp, dest)
+    so1 = os.path.join(dest_dir, "libonnxruntime.so.1")
+    if not os.path.isfile(so1):
+        raise RuntimeError(
+            f"ORT_BUNDLE=1 but {so1} missing after copy (ORT_ROOT={os.environ.get('ORT_ROOT', '')})"
+        )
     return None
 
 
