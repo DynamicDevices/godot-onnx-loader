@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Headless csv_smoke with Godot 4.6 + MS ORT bundled next to the addon .so.
-# Store ORT (ONNX_ORT_BIN) dlopen fails under godot_4_6 FHS — use adjacent MS ORT.
+# Headless csv_smoke with Godot 4.6 + MS ORT (not nix store — store dlopen fails under godot_4_6 FHS).
 # Run: nix develop --command bash tools/godot_46_csv_smoke.sh
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -15,14 +14,16 @@ fi
 
 ORT_ROOT="$ORT_MS" bash "$ROOT/tools/fetch_ms_ort.sh" >/dev/null
 cp -f "$ORT_MS/lib/libonnxruntime.so" "$ORT_MS/lib/libonnxruntime.so.1" "$BIN/"
+test -f "$ORT_MS/lib/libonnxruntime.so.1"
 
+ort_ms_q=$(printf '%q' "$ORT_MS/lib")
 root_q=$(printf '%q' "$ROOT")
 out_q=$(printf '%q' "$OUT")
 
 nix shell github:nixos/nixpkgs/nixos-26.05#godot_4_6 --command bash -c "
 set -euo pipefail
-unset ONNX_ORT_BIN
-unset LD_LIBRARY_PATH
+export ONNX_ORT_BIN=$ort_ms_q
+export LD_LIBRARY_PATH=$ort_ms_q
 export ORT_BUNDLE=0
 G=\$(command -v godot4 || command -v godot || true)
 if [[ -z \"\$G\" || ! -x \"\$G\" ]]; then
