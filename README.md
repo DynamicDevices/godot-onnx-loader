@@ -41,7 +41,7 @@ bash tools/fetch_ms_ort.sh
 export ORT_ROOT=/tmp/onnxruntime-linux-x64-1.20.1 ORT_BUNDLE=1
 unset ONNX_ORT_BIN
 scons platform=linux target=template_debug
-bash tools/godot_46_ms_ort.sh   # headless 4.6 smoke
+bash tools/godot_46_ms_ort.sh   # headless 4.6 smoke (Nix: patchelf libstdc++ into bundled ORT)
 ```
 
 Or use the **portable zip** CI artifact (addon + MS ORT built together). For daily
