@@ -20,7 +20,15 @@ git submodule update --init --recursive
 rm -f addons/onnx_loader/bin/.ort-bundled.stamp
 rm -f addons/onnx_loader/bin/libstdc++.so.6 addons/onnx_loader/bin/libgcc_s.so.1
 
-scons -j"$(nproc)" platform=linux target=template_debug smoke-dlopen-ort
+_scons() {
+	if command -v scons >/dev/null 2>&1; then
+		scons "$@"
+	else
+		nix shell "${NIXPKGS}#scons" "${NIXPKGS}#gcc" --command scons "$@"
+	fi
+}
+
+_scons -j"$(nproc)" platform=linux target=template_debug smoke-dlopen-ort
 
 ORT_SO="$ROOT/addons/onnx_loader/bin/libonnxruntime.so.1"
 if [[ ! -f "$ORT_SO" ]]; then
