@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 OUT="${OUT:-/tmp/onnx-loader-smoke-bad-model.txt}"
 
-test -x build/smoke_csv || scons platform=linux target=template_debug smoke-csv >/dev/null
+test -x build/smoke_csv || scons platform=linux target=template_debug build/smoke_csv >/dev/null
 
 if bash "$ROOT/tools/with_bundled_ort.sh" ./build/smoke_csv fixtures/ci-smoke/model.json \
 	/no/such/model.onnx fixtures/ci-smoke/demo_inputs.csv >"$OUT" 2>&1; then
