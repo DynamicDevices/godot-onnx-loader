@@ -23,14 +23,18 @@ Fork/refreshed from [mat490/Godot-ONNX-AI-Models-Loaders](https://github.com/mat
 ```bash
 git clone --recurse-submodules https://github.com/DynamicDevices/godot-onnx-loader.git
 cd godot-onnx-loader
-nix develop   # nixos-26.05: nixpkgs onnxruntime + godot_4_6 (4.6.x, mic)
+nix develop   # nixos-25.11: store ORT + godot_4 (4.5.x; CI-green combo)
 scons platform=linux target=template_debug
 scons smoke-csv   # host CSV table (no Godot required)
 ```
 
 On NixOS the flake uses **nixpkgs `onnxruntime`** (store path, same libstdc++ as the
 loader). `ORT_BUNDLE=0` — no MS tarball copy; `ONNX_ORT_BIN` points at the store lib.
-Run Godot from `nix develop` (`GODOT_BIN=godot_4_6`, nixos-26.05) so ORT dependencies resolve.
+Run Godot from `nix develop` (`GODOT_BIN=godot_4`) so ORT dependencies resolve.
+
+**Godot 4.6 / nixos-26.05:** use `nix shell github:nixos/nixpkgs/nixos-26.05#godot_4_6` for the
+editor (mic). Keep ORT from this `nix develop` shell (`ONNX_ORT_BIN` + `LD_LIBRARY_PATH`) when
+launching — do not mix nixos-26.05 store ORT (1.24.x breaks teardown). godot-cpp 4.6 upgrade tracked separately.
 
 On Linux the GDExtension links **libstdc++ statically** (openxr/webrtc pattern) so the
 `.so` itself does not depend on the host's `libstdc++.so.6`. You still need a compatible

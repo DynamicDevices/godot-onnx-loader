@@ -6,7 +6,7 @@
 #define ONNX_LOADER_RUNTIME_H
 
 /** Bump when Julian needs to confirm a rebuilt .so is loaded. */
-#define ONNX_LOADER_BUILD "ort-nix-2605-godot46-20260827j"
+#define ONNX_LOADER_BUILD "ort-nix-2511-godot45-20260827l"
 
 #include <stdint.h>
 
