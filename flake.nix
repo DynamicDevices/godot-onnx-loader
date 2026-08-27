@@ -30,12 +30,14 @@
             git
             curl
             python3
+            patchelf
           ];
           shellHook = ''
             export ORT_ROOT="${ortNix}"
             export ORT_LIB="${ortNix}/lib"
             export ONNX_ORT_BIN="${ortPkg}/lib"
             export ORT_BUNDLE=0
+            export NIX_CXX_LIB="${pkgs.stdenv.cc.cc.lib}/lib"
             export C_INCLUDE_PATH="${ortNix}/include''${C_INCLUDE_PATH:+:}$C_INCLUDE_PATH"
             export LIBRARY_PATH="${ortNix}/lib''${LIBRARY_PATH:+:}$LIBRARY_PATH"
             export LD_LIBRARY_PATH="${ortLibPath}''${LD_LIBRARY_PATH:+:}$LD_LIBRARY_PATH"
@@ -44,7 +46,8 @@
             echo "  ORT_ROOT=$ORT_ROOT"
             echo "  ONNX_ORT_BIN=$ONNX_ORT_BIN"
             echo "  GODOT_BIN=$GODOT_BIN"
-            echo "  For Godot 4.6/mic on Nix: nix shell github:nixos/nixpkgs/nixos-26.05#godot_4_6 (separate from this shell ORT)"
+            echo "  NIX_CXX_LIB=$NIX_CXX_LIB (for tools/patch_bundled_ort_rpath.sh on MS ORT / Godot 4.6)"
+            echo "  For Godot 4.6/mic on Nix: bash tools/godot_46_ms_ort.sh (MS ORT bundle + patchelf)"
             echo "  git submodule update --init --recursive"
             echo "  scons platform=linux target=template_debug"
             echo "  bash tools/godot_csv_smoke.sh"
