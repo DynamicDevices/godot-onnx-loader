@@ -32,7 +32,7 @@ nix shell github:nixos/nixpkgs/nixos-25.11#patchelf github:nixos/nixpkgs/nixos-2
 set -euo pipefail
 export NIX_CXX_LIB=\$(dirname \"\$(dirname \"\$(readlink -f \"\$(command -v g++)\")\")\")/lib
 bash $root_q/tools/patch_bundled_ort_rpath.sh
-./$root_q/build/smoke_dlopen_ort $root_q/addons/onnx_loader/bin $root_q/fixtures/ci-smoke/model.onnx
+# smoke-dlopen-ort already ran in scons above — Godot 4.6 csv_smoke next.
 unset ONNX_ORT_BIN
 unset LD_LIBRARY_PATH
 G=\$(command -v godot4 || command -v godot || true)
