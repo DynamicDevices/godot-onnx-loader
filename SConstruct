@@ -81,7 +81,7 @@ env_c.Append(
 # C++ GDExtension bindings — Werror on our code; suppress godot-cpp header noise.
 env_cpp = env.Clone()
 env_cpp.Append(
-    CXXFLAGS=["-Wall", "-Wextra", "-Werror", "-Wno-unused-parameter", "-fno-gnu-unique"],
+    CXXFLAGS=["-Wall", "-Wextra", "-Werror", "-Wno-unused-parameter", "-Wno-unused-variable", "-fno-gnu-unique"],
     **ort_inc_flags,
     LINKFLAGS=["-Wl,-z,noexecstack"],
 )

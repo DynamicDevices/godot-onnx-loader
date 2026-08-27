@@ -1,6 +1,6 @@
 [configuration]
 entry_symbol = "onnx_loader_library_init"
-compatibility_minimum = "4.3"
+compatibility_minimum = "4.5"
 
 [libraries]
 linux.debug.x86_64 = "res://addons/onnx_loader/bin/libonnx_loader.linux.template_debug.x86_64.so"
