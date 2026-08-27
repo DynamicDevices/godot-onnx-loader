@@ -85,6 +85,9 @@ env_cpp.Append(
     **ort_inc_flags,
     LINKFLAGS=["-Wl,-z,noexecstack"],
 )
+# Portable Linux .so — same pattern as godot_openxr_vendors / webrtc-native.
+if env_cpp["platform"] == "linux":
+    env_cpp.Append(LINKFLAGS=["-static-libgcc", "-static-libstdc++"])
 
 runtime_lib = env_c.StaticLibrary("build/libonnx_runtime", runtime_c)
 

@@ -32,6 +32,11 @@ On NixOS the flake uses **nixpkgs `onnxruntime`** (store path, same libstdc++ as
 loader). `ORT_BUNDLE=0` — no MS tarball copy; `ONNX_ORT_BIN` points at the store lib.
 Run Godot from `nix develop` (`GODOT_BIN=godot_4`) so ORT dependencies resolve.
 
+On Linux the GDExtension links **libstdc++ statically** (openxr/webrtc pattern) so the
+`.so` itself does not depend on the host's `libstdc++.so.6`. You still need a compatible
+`libonnxruntime.so` at runtime (bundled MS tarball, nixpkgs store path, or distro package
+via `ONNX_ORT_BIN`).
+
 Ubuntu CI still bundles the Microsoft ORT 1.20.1 tarball for non-Nix hosts.
 
 `scons` copies `libonnxruntime.so.1` into `addons/onnx_loader/bin/` when bundling
