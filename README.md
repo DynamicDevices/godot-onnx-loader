@@ -33,8 +33,14 @@ loader). `ORT_BUNDLE=0` — no MS tarball copy; `ONNX_ORT_BIN` points at the sto
 Run Godot from `nix develop` (`GODOT_BIN=godot_4`) so ORT dependencies resolve.
 
 **Godot 4.6:** addon is built on **godot-cpp 4.5** (`compatibility_minimum = "4.5"`). Rebuild
-after `git submodule update --init --recursive`. Still use **ORT from `nix develop`**
-(`ONNX_ORT_BIN` + `LD_LIBRARY_PATH`) — do not launch bare `godot 4.6` without those exports.
+after `git submodule update --init --recursive`. Use store ORT from `nix develop`
+(`ONNX_ORT_BIN` + `LD_LIBRARY_PATH`):
+
+```bash
+nix develop --command bash tools/godot_46_csv_smoke.sh   # headless 4.6 proof
+```
+
+Do not launch bare `godot 4.6` without those exports.
 
 On Linux the GDExtension links **libstdc++ statically** (openxr/webrtc pattern) so the
 `.so` itself does not depend on the host's `libstdc++.so.6`. You still need a compatible

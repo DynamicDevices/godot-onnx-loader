@@ -100,4 +100,5 @@ jobs:
             scons platform=linux target=template_debug smoke-dlopen-ort
             bash tools/smoke_bad_model.sh
             bash tools/godot_csv_smoke.sh
+            bash tools/godot_46_csv_smoke.sh
           '
