@@ -44,6 +44,12 @@ scons platform=linux target=template_debug
 bash tools/godot_46_ms_ort.sh   # headless 4.6 smoke (Nix: patchelf libstdc++ into bundled ORT)
 ```
 
+Run `godot_46_ms_ort.sh` from a **plain shell** (not wrapped in `nix develop`). The script
+opens its own `nix shell` for patchelf + Godot 4.6 with `NIX_CXX_LIB` set. If you build
+with `nix develop` first, you still need that script (or manually `REQUIRE_NIX_PATCH=1 bash
+tools/patch_bundled_ort_rpath.sh` with `NIX_CXX_LIB` from nix `g++`) before Godot 4.6 —
+otherwise bundled ORT dlopen fails with `(null)`.
+
 Or use the **portable zip** CI artifact (addon + MS ORT built together). For daily
 work, `nix develop` + `$GODOT_BIN` (~4.5) + `bash tools/godot_csv_smoke.sh` stays green.
 

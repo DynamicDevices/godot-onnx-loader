@@ -10,6 +10,10 @@ if [[ ! -f "$ORT_SO" ]]; then
 	exit 1
 fi
 if [[ -z "$CXX_LIB" || ! -d "$CXX_LIB" ]]; then
+	if [[ "${REQUIRE_NIX_PATCH:-0}" == "1" ]]; then
+		echo "patch_bundled_ort_rpath: NIX_CXX_LIB required but not set (g++=$(command -v g++ || echo missing))" >&2
+		exit 1
+	fi
 	echo "patch_bundled_ort_rpath: NIX_CXX_LIB not set — skip (non-Nix host)" >&2
 	exit 0
 fi
