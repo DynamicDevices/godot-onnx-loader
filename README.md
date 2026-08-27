@@ -50,8 +50,11 @@ copies `libstdc++.so.6`/`libgcc_s.so.1` beside bundled ORT, and runs headless cs
 If you build with `nix develop` first, you still need that script (or manually
 `REQUIRE_NIX_PATCH=1 bash tools/patch_bundled_ort_rpath.sh`) before Godot 4.6 —
 otherwise bundled ORT dlopen fails with `(null)` or `free(): invalid size` on teardown.
-`ONNX_LOADER_SKIP_SESSION_RELEASE` **defaults to on** (skips `ReleaseSession` on destroy);
-set `=0` only when deliberately testing ORT teardown.
+`ONNX_LOADER_SKIP_SESSION_RELEASE` **defaults to on** (skips `ReleaseSession` *and*
+`ReleaseEnv` on destroy — leaking both until process exit); set `=0` only when
+deliberately testing ORT teardown. Skipping only the session while still calling
+`ReleaseEnv` corrupted the heap under Godot 4.6 (Julian: `free(): invalid size`
+after `ReleaseSession-skipped`).
 
 Or use the **portable zip** CI artifact (addon + MS ORT built together). For daily
 work, `nix develop` + `$GODOT_BIN` (~4.5) + `bash tools/godot_csv_smoke.sh` stays green.
