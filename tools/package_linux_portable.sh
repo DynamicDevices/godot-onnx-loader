@@ -14,8 +14,10 @@ export ORT_BUNDLE=1
 unset ONNX_ORT_BIN
 
 bash tools/fetch_ms_ort.sh
-git submodule update --init --recursive
-scons platform=linux target="$TARGET"
+if [[ "${SKIP_SCONS:-0}" != "1" ]]; then
+  git submodule update --init --recursive
+  scons platform=linux target="$TARGET"
+fi
 
 SO="addons/onnx_loader/bin/libonnx_loader.linux.${TARGET}.x86_64.so"
 ORT_SO="addons/onnx_loader/bin/libonnxruntime.so.1"
