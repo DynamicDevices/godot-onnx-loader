@@ -6,7 +6,7 @@
 #define ONNX_LOADER_RUNTIME_H
 
 /** Bump when Julian needs to confirm a rebuilt .so is loaded. */
-#define ONNX_LOADER_BUILD "ort-nodlopenlink-20260827a"
+#define ONNX_LOADER_BUILD "ort-per-session-env-20260827b"
 
 #include <stdint.h>
 

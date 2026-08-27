@@ -14,7 +14,9 @@
 
 struct OnnxRuntime {
 	const OrtApi *ort;
+	OrtEnv *env;
 	OrtSession *session;
+	int session_live;
 	char input_name[ONNX_NAME_MAX];
 	char output_name[ONNX_NAME_MAX];
 	int input_size;
@@ -24,12 +26,6 @@ struct OnnxRuntime {
 static const OrtApi *g_ort;
 static void *g_ort_dlhandle;
 static char g_ort_libpath[4096];
-static OrtEnv *g_env;
-static int g_env_users;
-
-#define ORPHAN_MAX 64
-static OrtSession *g_orphan_sessions[ORPHAN_MAX];
-static int g_orphan_n;
 
 static const OrtApi *ort_api(void);
 
@@ -141,30 +137,6 @@ static const OrtApi *ort_api(void)
 	return g_ort;
 }
 
-static int ort_env_use(void)
-{
-	const OrtApi *ort = ort_api();
-	if (!ort) {
-		return -1;
-	}
-	if (g_env_users == 0) {
-		if (ort_fail(ort, ort->CreateEnv(ORT_LOGGING_LEVEL_WARNING, "onnx_loader", &g_env),
-			     "CreateEnv")) {
-			return -1;
-		}
-	}
-	g_env_users++;
-	return 0;
-}
-
-static void ort_env_unuse(void)
-{
-	if (g_env_users <= 0) {
-		return;
-	}
-	g_env_users--;
-}
-
 static void copy_io_name(char *dst, size_t dst_cap, const char *src)
 {
 	if (!dst || dst_cap == 0) {
@@ -268,18 +240,22 @@ done:
 
 OnnxRuntime *onnx_runtime_create(const char *model_onnx_path)
 {
-	if (!model_onnx_path) {
+	if (!model_onnx_path || model_onnx_path[0] == '\0') {
+		fprintf(stderr, "onnx_runtime_create: empty model path\n");
+		return NULL;
+	}
+	if (access(model_onnx_path, R_OK) != 0) {
+		fprintf(stderr, "onnx_runtime_create: model not found: %s\n", model_onnx_path);
 		return NULL;
 	}
 
 	const OrtApi *ort = ort_api();
-	if (!ort || ort_env_use() != 0) {
+	if (!ort) {
 		return NULL;
 	}
 
 	OnnxRuntime *rt = (OnnxRuntime *)calloc(1, sizeof(*rt));
 	if (!rt) {
-		ort_env_unuse();
 		return NULL;
 	}
 	rt->ort = ort;
@@ -289,17 +265,26 @@ OnnxRuntime *onnx_runtime_create(const char *model_onnx_path)
 	char *tmp_in = NULL;
 	char *tmp_out = NULL;
 
+	if (ort_fail(ort, ort->CreateEnv(ORT_LOGGING_LEVEL_WARNING, "onnx_loader", &rt->env),
+		     "CreateEnv")) {
+		onnx_runtime_destroy(rt);
+		return NULL;
+	}
+
 	if (ort_fail(ort, ort->CreateSessionOptions(&opts), "CreateSessionOptions") ||
-	    ort_fail(ort, ort->CreateSession(g_env, model_onnx_path, opts, &rt->session),
+	    ort_fail(ort, ort->CreateSession(rt->env, model_onnx_path, opts, &rt->session),
 		     "CreateSession")) {
 		if (opts) {
 			ort->ReleaseSessionOptions(opts);
 		}
+		rt->session = NULL;
+		rt->session_live = 0;
 		onnx_runtime_destroy(rt);
 		return NULL;
 	}
 	ort->ReleaseSessionOptions(opts);
 	opts = NULL;
+	rt->session_live = 1;
 
 	if (
 	    ort_fail(ort, ort->GetAllocatorWithDefaultOptions(&allocator), "GetAllocator") ||
@@ -333,13 +318,19 @@ void onnx_runtime_destroy(OnnxRuntime *rt)
 	}
 	const OrtApi *ort = rt->ort;
 	teardown_log("destroy-enter");
-	if (ort && rt->session) {
+	if (ort && rt->session_live && rt->session) {
 		teardown_log("ReleaseSession");
 		ort->ReleaseSession(rt->session);
 		rt->session = NULL;
+		rt->session_live = 0;
 		teardown_log("ReleaseSession-done");
 	}
-	ort_env_unuse();
+	if (ort && rt->env) {
+		teardown_log("ReleaseEnv");
+		ort->ReleaseEnv(rt->env);
+		rt->env = NULL;
+		teardown_log("ReleaseEnv-done");
+	}
 	rt->ort = NULL;
 	teardown_log("free-rt");
 	free(rt);
@@ -354,25 +345,7 @@ void onnx_runtime_drop(OnnxRuntime *rt)
 
 void onnx_runtime_shutdown(void)
 {
-	const OrtApi *ort = g_ort;
 	teardown_log("shutdown-enter");
-	while (g_orphan_n > 0) {
-		OrtSession *s = g_orphan_sessions[--g_orphan_n];
-		if (ort && s) {
-			teardown_log("ReleaseSession-orphan");
-			ort->ReleaseSession(s);
-		}
-	}
-	if (g_env_users != 0) {
-		fprintf(stderr, "onnx_runtime_shutdown: %d live session(s)\n", g_env_users);
-	}
-	if (ort && g_env) {
-		teardown_log("ReleaseEnv");
-		ort->ReleaseEnv(g_env);
-		g_env = NULL;
-		teardown_log("ReleaseEnv-done");
-	}
-	g_env_users = 0;
 	g_ort = NULL;
 	if (g_ort_dlhandle) {
 		dlclose(g_ort_dlhandle);
@@ -388,17 +361,12 @@ const char *onnx_runtime_ort_version(void)
 	if (!ort) {
 		return "unknown";
 	}
-	Dl_info info;
-	if (dladdr((void *)ort->ReleaseSession, &info) && info.dli_fname && info.dli_fname[0]) {
-		/* Version string lives in the same DSO as ReleaseSession. */
-		typedef const OrtApiBase *(*OrtGetApiBaseFn)(void);
-		if (g_ort_dlhandle) {
-			OrtGetApiBaseFn get_base =
-				(OrtGetApiBaseFn)dlsym(g_ort_dlhandle, "OrtGetApiBase");
-			const OrtApiBase *base = get_base ? get_base() : NULL;
-			if (base && base->GetVersionString) {
-				return base->GetVersionString();
-			}
+	typedef const OrtApiBase *(*OrtGetApiBaseFn)(void);
+	if (g_ort_dlhandle) {
+		OrtGetApiBaseFn get_base = (OrtGetApiBaseFn)dlsym(g_ort_dlhandle, "OrtGetApiBase");
+		const OrtApiBase *base = get_base ? get_base() : NULL;
+		if (base && base->GetVersionString) {
+			return base->GetVersionString();
 		}
 	}
 	return "unknown";
@@ -409,10 +377,7 @@ const char *onnx_runtime_ort_library_path(void)
 	if (g_ort_libpath[0]) {
 		return g_ort_libpath;
 	}
-	const OrtApi *ort = g_ort;
-	if (!ort) {
-		ort = ort_api();
-	}
+	const OrtApi *ort = g_ort ? g_ort : ort_api();
 	if (!ort) {
 		return "unknown";
 	}
@@ -451,7 +416,7 @@ int onnx_runtime_output_size(const OnnxRuntime *rt)
 int onnx_runtime_predict(const OnnxRuntime *rt, const float *input, int input_len,
 			 float *output, int output_cap, int *output_len_out)
 {
-	if (!rt || !input || !output || input_len != rt->input_size ||
+	if (!rt || !rt->session_live || !input || !output || input_len != rt->input_size ||
 	    output_cap < rt->output_size) {
 		return -1;
 	}
