@@ -171,6 +171,13 @@ static void ort_env_unuse(void)
 	}
 	g_env_users--;
 	if (g_env_users == 0 && g_ort && g_env) {
+		/* Never ReleaseEnv while sessions may still be leaked (skip path):
+		 * freeing the env out from under a live session corrupts the heap and
+		 * surfaces later as free(): invalid size (Julian editor log). */
+		if (skip_session_release()) {
+			teardown_log("ReleaseEnv-skipped");
+			return;
+		}
 		teardown_log("ReleaseEnv");
 		g_ort->ReleaseEnv(g_env);
 		g_env = NULL;
@@ -394,10 +401,16 @@ void onnx_runtime_shutdown(void)
 		fprintf(stderr, "onnx_runtime_shutdown: %d live session(s)\n", g_env_users);
 	}
 	if (g_ort && g_env) {
-		teardown_log("ReleaseEnv");
-		g_ort->ReleaseEnv(g_env);
-		g_env = NULL;
-		teardown_log("ReleaseEnv-done");
+		if (skip_session_release()) {
+			teardown_log("ReleaseEnv-skipped");
+			/* Abandon pointers; process exit reclaims. */
+			g_env = NULL;
+		} else {
+			teardown_log("ReleaseEnv");
+			g_ort->ReleaseEnv(g_env);
+			g_env = NULL;
+			teardown_log("ReleaseEnv-done");
+		}
 	}
 	g_env_users = 0;
 	g_ort = NULL;
