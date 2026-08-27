@@ -1,6 +1,6 @@
 # godot-onnx-loader
 
-Generic **ONNX Runtime GDExtension** for Godot 4.3 — mat490-style API, Linux/Nix/scons.
+Generic **ONNX Runtime GDExtension** for Godot 4.5+ — mat490-style API, Linux/Nix/scons.
 
 Fork/refreshed from [mat490/Godot-ONNX-AI-Models-Loaders](https://github.com/mat490/Godot-ONNX-AI-Models-Loaders) with:
 
@@ -32,9 +32,9 @@ On NixOS the flake uses **nixpkgs `onnxruntime`** (store path, same libstdc++ as
 loader). `ORT_BUNDLE=0` — no MS tarball copy; `ONNX_ORT_BIN` points at the store lib.
 Run Godot from `nix develop` (`GODOT_BIN=godot_4`) so ORT dependencies resolve.
 
-**Godot 4.6 / nixos-26.05:** use `nix shell github:nixos/nixpkgs/nixos-26.05#godot_4_6` for the
-editor (mic). Keep ORT from this `nix develop` shell (`ONNX_ORT_BIN` + `LD_LIBRARY_PATH`) when
-launching — do not mix nixos-26.05 store ORT (1.24.x breaks teardown). godot-cpp 4.6 upgrade tracked separately.
+**Godot 4.6:** addon is built on **godot-cpp 4.5** (`compatibility_minimum = "4.5"`). Rebuild
+after `git submodule update --init --recursive`. Still use **ORT from `nix develop`**
+(`ONNX_ORT_BIN` + `LD_LIBRARY_PATH`) — do not launch bare `godot 4.6` without those exports.
 
 On Linux the GDExtension links **libstdc++ statically** (openxr/webrtc pattern) so the
 `.so` itself does not depend on the host's `libstdc++.so.6`. You still need a compatible
@@ -59,7 +59,7 @@ onnxruntime from source (webrtc-native pattern) — not shipped by Microsoft.
 (non-Nix). The GDExtension **dlopens** ORT at runtime. After rebuild, check
 `get_diagnostics()["ort_library_path"]` — on Nix expect a `/nix/store/...` path.
 
-Godot 4.3 (optional):
+Godot 4.5+ (optional):
 
 ```bash
 # demo/addons/onnx_loader → ../../addons/onnx_loader (symlink)

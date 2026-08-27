@@ -1,5 +1,5 @@
 {
-  description = "godot-onnx-loader: generic ONNX GDExtension for Godot 4.3 (mat490-style API)";
+  description = "godot-onnx-loader: generic ONNX GDExtension for Godot 4.5+ (mat490-style API)";
 
   inputs = {
     # 26.05 ORT 1.24.x aborts Godot on ORT teardown; stay on 25.11 until godot-cpp 4.6 lands.
