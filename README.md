@@ -32,15 +32,15 @@ On NixOS the flake uses **nixpkgs `onnxruntime`** (store path, same libstdc++ as
 loader). `ORT_BUNDLE=0` — no MS tarball copy; `ONNX_ORT_BIN` points at the store lib.
 Run Godot from `nix develop` (`GODOT_BIN=godot_4`) so ORT dependencies resolve.
 
-**Godot 4.6:** addon is built on **godot-cpp 4.5** (`compatibility_minimum = "4.5"`). Rebuild
-after `git submodule update --init --recursive`. Use store ORT from `nix develop`
-(`ONNX_ORT_BIN` + `LD_LIBRARY_PATH`):
+**Godot 4.6:** addon is built on **godot-cpp 4.5** (`compatibility_minimum = "4.5"`). Store ORT
+(`ONNX_ORT_BIN`) dlopen fails under the godot 4.6 FHS wrapper — bundle MS ORT next to the addon:
 
 ```bash
-nix develop --command bash tools/godot_46_csv_smoke.sh   # headless 4.6 proof
+nix develop --command bash tools/godot_46_csv_smoke.sh   # fetches MS ORT → demo/bin, headless 4.6
 ```
 
-Do not launch bare `godot 4.6` without those exports.
+For 4.6 editor: copy `libonnxruntime.so*` into `demo/addons/onnx_loader/bin/`, **unset**
+`ONNX_ORT_BIN`, then launch godot 4.6 (or use the portable zip artifact).
 
 On Linux the GDExtension links **libstdc++ statically** (openxr/webrtc pattern) so the
 `.so` itself does not depend on the host's `libstdc++.so.6`. You still need a compatible

@@ -1,28 +1,28 @@
 #!/usr/bin/env bash
-# Headless csv_smoke with Godot 4.6 (nixpkgs) + store ORT from nix develop.
+# Headless csv_smoke with Godot 4.6 + MS ORT bundled next to the addon .so.
+# Store ORT (ONNX_ORT_BIN) dlopen fails under godot_4_6 FHS — use adjacent MS ORT.
 # Run: nix develop --command bash tools/godot_46_csv_smoke.sh
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${OUT:-/tmp/godot-onnx-loader-csv-smoke-46.txt}"
+BIN="$ROOT/demo/addons/onnx_loader/bin"
+ORT_MS="${ORT_MS:-/tmp/onnxruntime-linux-x64-1.20.1}"
 
-if [[ -z "${ONNX_ORT_BIN:-}" ]]; then
-	echo "Must run inside nix develop (ONNX_ORT_BIN + LD_LIBRARY_PATH)" >&2
-	exit 1
-fi
-if [[ ! -f "$ROOT/demo/addons/onnx_loader/bin/libonnx_loader.linux.template_debug.x86_64.so" ]]; then
+if [[ ! -f "$BIN/libonnx_loader.linux.template_debug.x86_64.so" ]]; then
 	echo "Build addon first: scons platform=linux target=template_debug" >&2
 	exit 1
 fi
 
-ort_q=$(printf '%q' "$ONNX_ORT_BIN")
-ld_q=$(printf '%q' "${LD_LIBRARY_PATH:-}")
+ORT_ROOT="$ORT_MS" bash "$ROOT/tools/fetch_ms_ort.sh" >/dev/null
+cp -f "$ORT_MS/lib/libonnxruntime.so" "$ORT_MS/lib/libonnxruntime.so.1" "$BIN/"
+
 root_q=$(printf '%q' "$ROOT")
 out_q=$(printf '%q' "$OUT")
 
 nix shell github:nixos/nixpkgs/nixos-26.05#godot_4_6 --command bash -c "
 set -euo pipefail
-export ONNX_ORT_BIN=$ort_q
-export LD_LIBRARY_PATH=$ld_q
+unset ONNX_ORT_BIN
+unset LD_LIBRARY_PATH
 export ORT_BUNDLE=0
 G=\$(command -v godot4 || command -v godot || true)
 if [[ -z \"\$G\" || ! -x \"\$G\" ]]; then
