@@ -31,7 +31,15 @@ nix shell github:nixos/nixpkgs/nixos-25.11#patchelf github:nixos/nixpkgs/nixos-2
 	github:nixos/nixpkgs/nixos-26.05#godot_4_6 --command bash -c "
 set -euo pipefail
 export NIX_CXX_LIB=\$(dirname \"\$(dirname \"\$(readlink -f \"\$(command -v g++)\")\")\")/lib
-bash $root_q/tools/patch_bundled_ort_rpath.sh
+if [[ -z \"\$NIX_CXX_LIB\" || ! -d \"\$NIX_CXX_LIB\" ]]; then
+	echo \"godot_46_ms_ort: NIX_CXX_LIB unresolved (g++=\$(command -v g++ || echo missing))\" >&2
+	exit 1
+fi
+REQUIRE_NIX_PATCH=1 bash $root_q/tools/patch_bundled_ort_rpath.sh
+if ! patchelf --print-rpath $root_q/addons/onnx_loader/bin/libonnxruntime.so.1 | tr ':' '\\n' | grep -Fxq \"\$NIX_CXX_LIB\"; then
+	echo \"godot_46_ms_ort: bundled ORT missing libstdc++ rpath after patch\" >&2
+	exit 1
+fi
 # smoke-dlopen-ort already ran in scons above — Godot 4.6 csv_smoke next.
 unset ONNX_ORT_BIN
 unset LD_LIBRARY_PATH
