@@ -75,6 +75,8 @@ jobs:
           path: /tmp/godot-onnx-loader-linux-x64-portable.zip
           if-no-files-found: error
           retention-days: 30
+
+  nixos-godot-smoke:
     runs-on: [self-hosted, Linux, nixos, esl-nixos]
     env:
       TMPDIR: /var/tmp

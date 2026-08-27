@@ -2,7 +2,7 @@
   description = "godot-onnx-loader: generic ONNX GDExtension for Godot 4.3 (mat490-style API)";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -12,7 +12,6 @@
         pkgs = import nixpkgs { inherit system; };
         ortPkg = pkgs.onnxruntime;
         ortDev = pkgs.onnxruntime.dev;
-        # ORT_ROOT layout for scons headers; dlopen uses store lib via ONNX_ORT_BIN.
         ortNix = pkgs.runCommand "onnxruntime-nix-${ortPkg.version}" { } ''
           mkdir -p $out/lib $out/include
           for f in ${ortPkg}/lib/libonnxruntime.so*; do
@@ -21,7 +20,7 @@
           cp -r ${ortDev}/include/* $out/include/
         '';
         ortLibPath = pkgs.lib.makeLibraryPath [ ortPkg ];
-        godotBin = "${pkgs.godot_4}/bin/godot4";
+        godotBin = "${pkgs.godot_4_6}/bin/godot4";
       in {
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
@@ -40,7 +39,7 @@
             export LIBRARY_PATH="${ortNix}/lib''${LIBRARY_PATH:+:}$LIBRARY_PATH"
             export LD_LIBRARY_PATH="${ortLibPath}''${LD_LIBRARY_PATH:+:}$LD_LIBRARY_PATH"
             export GODOT_BIN="${godotBin}"
-            echo "godot-onnx-loader nix develop (nixpkgs ORT ${ortPkg.version} + godot_4)"
+            echo "godot-onnx-loader nix develop (ORT ${ortPkg.version} from 25.11 + godot_4_6 ${pkgs.godot_4_6.version})"
             echo "  ORT_ROOT=$ORT_ROOT"
             echo "  ONNX_ORT_BIN=$ONNX_ORT_BIN"
             echo "  GODOT_BIN=$GODOT_BIN"
