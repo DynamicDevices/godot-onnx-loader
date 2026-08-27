@@ -152,8 +152,16 @@ static int ort_env_use(void)
 
 static int skip_session_release(void)
 {
+	/* Default ON: Godot 4.6 + MS ORT often hits free(): invalid size in
+	 * ReleaseSession during editor/quit. Opt out with =0 for leak checks. */
 	const char *e = getenv("ONNX_LOADER_SKIP_SESSION_RELEASE");
-	return e && e[0] == '1' && e[1] == '\0';
+	if (!e || e[0] == '\0') {
+		return 1;
+	}
+	if (e[0] == '0' && e[1] == '\0') {
+		return 0;
+	}
+	return e[0] == '1' && e[1] == '\0';
 }
 
 static void ort_env_unuse(void)
