@@ -23,23 +23,20 @@ Fork/refreshed from [mat490/Godot-ONNX-AI-Models-Loaders](https://github.com/mat
 ```bash
 git clone --recurse-submodules https://github.com/DynamicDevices/godot-onnx-loader.git
 cd godot-onnx-loader
-nix develop   # MS ORT 1.20.1 prebuilt (NixOS-safe; nixpkgs libonnxruntime execstack fails in Godot)
+nix develop   # nixpkgs onnxruntime + godot_4 (store ORT via ONNX_ORT_BIN)
 scons platform=linux target=template_debug
 scons smoke-csv   # host CSV table (no Godot required)
 ```
 
-On NixOS, **do not** point `ORT_ROOT` at nixpkgs `onnxruntime` for Godot — the store
-`libonnxruntime.so.1` requests an executable stack and Godot dlopen fails. The flake
-and CI both use the Microsoft linux-x64 tarball instead.
+On NixOS the flake uses **nixpkgs `onnxruntime`** (store path, same libstdc++ as the
+loader). `ORT_BUNDLE=0` — no MS tarball copy; `ONNX_ORT_BIN` points at the store lib.
+Run Godot from `nix develop` (`GODOT_BIN=godot_4`) so ORT dependencies resolve.
 
-`scons` copies `libonnxruntime.so.1` into `addons/onnx_loader/bin/`. The
-GDExtension **dlopens** that copy at runtime (no link-time `NEEDED` on
-`libonnxruntime`). After rebuild, check `get_diagnostics()["ort_library_path"]`
-points at `.../addons/onnx_loader/bin/libonnxruntime.so.1`.
+Ubuntu CI still bundles the Microsoft ORT 1.20.1 tarball for non-Nix hosts.
 
-**NixOS Godot:** use the **official** Godot binary from `nix develop`
-(`GODOT_BIN`). The nixpkgs `godot_4` wrapper aborts in ORT `ReleaseSession`
-(`free(): invalid pointer`) on the same machine where official 4.5.1 is clean.
+`scons` copies `libonnxruntime.so.1` into `addons/onnx_loader/bin/` when bundling
+(non-Nix). The GDExtension **dlopens** ORT at runtime. After rebuild, check
+`get_diagnostics()["ort_library_path"]` — on Nix expect a `/nix/store/...` path.
 
 Godot 4.3 (optional):
 

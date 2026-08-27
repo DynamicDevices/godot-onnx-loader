@@ -67,7 +67,6 @@ jobs:
             set -euo pipefail
             git submodule update --init --recursive
             scons platform=linux target=template_debug
-            bash tools/patch_bundled_ort_rpath.sh
             scons platform=linux target=template_debug smoke-dlopen-ort
             bash tools/smoke_bad_model.sh
             bash tools/godot_csv_smoke.sh

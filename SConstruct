@@ -133,6 +133,13 @@ def _bundle_ort_libs(target, source, env):
     import shutil
     import stat
 
+    if os.environ.get("ORT_BUNDLE", "1") == "0":
+        print("ORT_BUNDLE=0 — skip copying libonnxruntime (use ONNX_ORT_BIN / store ORT)")
+        stamp = Dir("addons/onnx_loader/bin").abspath
+        os.makedirs(stamp, exist_ok=True)
+        open(os.path.join(stamp, ".ort-bundled.stamp"), "w").close()
+        return None
+
     dest_dir = Dir("addons/onnx_loader/bin").abspath
     os.makedirs(dest_dir, exist_ok=True)
     for name in ("libonnxruntime.so.1", "libonnxruntime.so"):
@@ -170,7 +177,8 @@ smoke_csv_run = env_c.Command(
 smoke_dlopen_run = env_c.Command(
     "build/smoke_dlopen_ort.stamp",
     [smoke_dlopen, bundle_ort, model_onnx],
-    f"{_wrap} ./build/smoke_dlopen_ort addons/onnx_loader/bin "
+    f"{_wrap} ./build/smoke_dlopen_ort "
+    f'"{os.environ.get("ONNX_ORT_BIN", "addons/onnx_loader/bin")}" '
     "fixtures/ci-smoke/model.onnx | tee /tmp/onnx-loader-smoke-dlopen.txt && "
     "grep -q ONNX_DLOPEN_TEARDOWN_OK /tmp/onnx-loader-smoke-dlopen.txt",
 )
