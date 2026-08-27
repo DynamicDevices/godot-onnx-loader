@@ -107,3 +107,20 @@ jobs:
             bash tools/smoke_bad_model.sh
             bash tools/godot_csv_smoke.sh
           '
+
+  nixos-godot-46-ms-ort:
+    runs-on: [self-hosted, Linux, nixos, esl-nixos]
+    env:
+      TMPDIR: /var/tmp
+      SCONS_CACHE: /var/tmp/github-runner-cache/scons/godot-onnx-loader-46
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Godot 4.6 MS ORT smoke (Julian Nix path)
+        run: |
+          set -euo pipefail
+          mkdir -p "$SCONS_CACHE"
+          export SCONS_CACHE
+          bash tools/godot_46_ms_ort.sh

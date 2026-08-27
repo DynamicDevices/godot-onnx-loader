@@ -156,6 +156,12 @@ static void ort_env_unuse(void)
 		return;
 	}
 	g_env_users--;
+	if (g_env_users == 0 && g_ort && g_env) {
+		teardown_log("ReleaseEnv");
+		g_ort->ReleaseEnv(g_env);
+		g_env = NULL;
+		teardown_log("ReleaseEnv-done");
+	}
 }
 
 static void copy_io_name(char *dst, size_t dst_cap, const char *src)
@@ -363,21 +369,20 @@ void onnx_runtime_drop(OnnxRuntime *rt)
 
 void onnx_runtime_shutdown(void)
 {
-	const OrtApi *ort = g_ort;
 	teardown_log("shutdown-enter");
 	if (g_env_users != 0) {
 		fprintf(stderr, "onnx_runtime_shutdown: %d live session(s)\n", g_env_users);
 	}
-	if (ort && g_env) {
+	if (g_ort && g_env) {
 		teardown_log("ReleaseEnv");
-		ort->ReleaseEnv(g_env);
+		g_ort->ReleaseEnv(g_env);
 		g_env = NULL;
 		teardown_log("ReleaseEnv-done");
 	}
 	g_env_users = 0;
 	g_ort = NULL;
 	if (g_ort_dlhandle) {
-		dlclose(g_ort_dlhandle);
+		/* Leak dl handle at process exit — dlclose after ORT teardown can abort on Nix. */
 		g_ort_dlhandle = NULL;
 	}
 	g_ort_libpath[0] = '\0';
