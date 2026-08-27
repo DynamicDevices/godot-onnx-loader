@@ -10,9 +10,6 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
-        # Match CI + vizemes-align inference-smoke job. Nixpkgs onnxruntime links a
-        # libonnxruntime.so.1 that requests an executable GNU_STACK; NixOS rejects
-        # that at dlopen (Julian 2026-08-26). MS prebuilt does not.
         ortVersion = "1.20.1";
         ortTgz = pkgs.fetchurl {
           url = "https://github.com/microsoft/onnxruntime/releases/download/v${ortVersion}/onnxruntime-linux-x64-${ortVersion}.tgz";
@@ -23,13 +20,19 @@
           tar -C $out --strip-components=1 -xzf ${ortTgz}
         '';
         # nixpkgs godot_4 aborts in ORT ReleaseSession (free(): invalid pointer).
-        # Official upstream binary on the same NixOS host tears down cleanly.
+        # Official upstream binary tears down cleanly once autoPatchelf'd for NixOS.
         godotVersion = "4.5.1";
         godotOfficial = pkgs.fetchzip {
           url = "https://github.com/godotengine/godot/releases/download/${godotVersion}-stable/Godot_v${godotVersion}-stable_linux.x86_64.zip";
           sha256 = "sha256-0B7p4Tl0eA1ENkERHz3kJKOhq2r5p0GUygCxQpf4S0E=";
         };
-        godotBin = "${godotOfficial}/Godot_v${godotVersion}-stable_linux.x86_64";
+        godotOfficialRaw = "${godotOfficial}/Godot_v${godotVersion}-stable_linux.x86_64";
+        # Pure NixOS cannot run unpatched upstream ELF (stub-ld). FHS wrapper for Julian + CI.
+        godotWrapped = pkgs.buildFHSEnv {
+          name = "godot-${godotVersion}-official";
+          runScript = "${godotOfficialRaw} \"\$@\"";
+        };
+        godotBin = "${godotWrapped}/bin/godot-${godotVersion}-official";
       in {
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
@@ -48,7 +51,7 @@
             export LD_LIBRARY_PATH="${ortMs}/lib''${LD_LIBRARY_PATH:+:}$LD_LIBRARY_PATH"
             export NIX_CXX_LIB="${pkgs.stdenv.cc.cc.lib}/lib"
             export GODOT_BIN="${godotBin}"
-            echo "godot-onnx-loader nix develop (ORT ${ortVersion} MS + Godot ${godotVersion} official)"
+            echo "godot-onnx-loader nix develop (ORT ${ortVersion} MS + Godot ${godotVersion} official NixOS-wrapped)"
             echo "  ORT_ROOT=$ORT_ROOT"
             echo "  GODOT_BIN=$GODOT_BIN"
             echo "  NIX_CXX_LIB=$NIX_CXX_LIB  (for MS ORT libstdc++)"
