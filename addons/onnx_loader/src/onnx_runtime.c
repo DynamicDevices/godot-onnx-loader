@@ -150,6 +150,12 @@ static int ort_env_use(void)
 	return 0;
 }
 
+static int skip_session_release(void)
+{
+	const char *e = getenv("ONNX_LOADER_SKIP_SESSION_RELEASE");
+	return e && e[0] == '1' && e[1] == '\0';
+}
+
 static void ort_env_unuse(void)
 {
 	if (g_env_users <= 0) {
@@ -349,11 +355,17 @@ void onnx_runtime_destroy(OnnxRuntime *rt)
 	const OrtApi *ort = rt->ort;
 	teardown_log("destroy-enter");
 	if (ort && rt->session_live && rt->session) {
-		teardown_log("ReleaseSession");
-		ort->ReleaseSession(rt->session);
-		rt->session = NULL;
-		rt->session_live = 0;
-		teardown_log("ReleaseSession-done");
+		if (skip_session_release()) {
+			teardown_log("ReleaseSession-skipped");
+			rt->session = NULL;
+			rt->session_live = 0;
+		} else {
+			teardown_log("ReleaseSession");
+			ort->ReleaseSession(rt->session);
+			rt->session = NULL;
+			rt->session_live = 0;
+			teardown_log("ReleaseSession-done");
+		}
 	}
 	ort_env_unuse();
 	rt->ort = NULL;

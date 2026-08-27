@@ -61,6 +61,7 @@ test -f $root_q/addons/onnx_loader/bin/libstdc++.so.6
 
 # Do not unset LD_LIBRARY_PATH — Godot 4.6 nix wrapper sets its own FHS env.
 unset ONNX_ORT_BIN
+export ONNX_LOADER_SKIP_SESSION_RELEASE=1
 G=\$(command -v godot4 || command -v godot || true)
 test -n \"\$G\" && test -x \"\$G\"
 cd $root_q/demo
