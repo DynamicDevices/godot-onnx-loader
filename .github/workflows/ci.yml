@@ -68,6 +68,10 @@ jobs:
             set -euo pipefail
             git submodule update --init --recursive
             scons platform=linux target=template_debug
+            so=addons/onnx_loader/bin/libonnx_loader.linux.template_debug.x86_64.so
+            test -f "$so"
+            ! ldd "$so" | grep -q libonnxruntime
+            ! ldd "$so" | grep -q libstdc++
             scons platform=linux target=template_debug smoke-dlopen-ort
             bash tools/smoke_bad_model.sh
             bash tools/godot_csv_smoke.sh
