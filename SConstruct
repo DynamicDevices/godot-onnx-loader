@@ -204,6 +204,10 @@ def _bundle_ort_libs(target, source, env):
         raise RuntimeError(
             f"ORT_BUNDLE=1 but {so1} missing after copy (ORT_ROOT={os.environ.get('ORT_ROOT', '')})"
         )
+    # glibc 2.41+ rejects RWE GNU_STACK on dlopen (MS ORT / vendor builds).
+    import subprocess
+
+    subprocess.check_call(["python3", "tools/clear_ort_execstack.py", so1])
     return None
 
 

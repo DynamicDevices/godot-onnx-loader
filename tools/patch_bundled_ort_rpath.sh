@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# MS libonnxruntime.so.1 needs libstdc++.so.6 at dlopen — patch bundled copy on Nix.
+# Patch bundled MS libonnxruntime.so.1 for Godot/Nix:
+#  - clear executable stack (glibc 2.41+ rejects RWE GNU_STACK)
+#  - on Nix: rpath + copy libstdc++/libgcc_s beside ORT
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ORT_SO="$ROOT/addons/onnx_loader/bin/libonnxruntime.so.1"
@@ -21,6 +23,9 @@ if [[ ! -f "$ORT_SO" ]]; then
 	exit 1
 fi
 
+# Always clear execstack — required on glibc 2.41+ (Julian/Nix Godot 4.6 dlopen).
+python3 "$ROOT/tools/clear_ort_execstack.py" "$ORT_SO"
+
 CXX_LIB="$(resolve_nix_cxx_lib || true)"
 GCC_S_LIB="$(resolve_nix_gcc_s_lib || true)"
 
@@ -29,7 +34,7 @@ if [[ -z "$CXX_LIB" || ! -d "$CXX_LIB" ]]; then
 		echo "patch_bundled_ort_rpath: NIX_CXX_LIB required but not set (g++=$(command -v g++ || echo missing))" >&2
 		exit 1
 	fi
-	echo "patch_bundled_ort_rpath: NIX_CXX_LIB not set — skip (non-Nix host)" >&2
+	echo "patch_bundled_ort_rpath: NIX_CXX_LIB not set — rpath skip (non-Nix host); execstack cleared"
 	exit 0
 fi
 if ! command -v patchelf >/dev/null 2>&1; then
@@ -57,5 +62,8 @@ add_rpath_if_missing "$CXX_LIB"
 if [[ -n "$GCC_S_LIB" && -d "$GCC_S_LIB" ]]; then
 	add_rpath_if_missing "$GCC_S_LIB"
 fi
+
+# patchelf can re-introduce oddities — clear again after rpath edits.
+python3 "$ROOT/tools/clear_ort_execstack.py" "$ORT_SO"
 
 echo "ONNX_ORT_RPATH_OK cxx=$CXX_LIB origin=\$ORIGIN ort=$ORT_SO"
