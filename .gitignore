@@ -10,3 +10,6 @@ addons/onnx_loader/bin/*.framework
 **/*.o
 result
 .direnv/
+.godot/
+**/.godot/
+*.uid
