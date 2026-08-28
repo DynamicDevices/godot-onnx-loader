@@ -227,7 +227,14 @@ jobs:
           set -euo pipefail
           mkdir -p "$SCONS_CACHE"
           export ORT_ROOT ORT_BUNDLE SCONS_CACHE
-          which cl
+          # Git for Windows ships usr/bin/link which shadows MSVC link.exe
+          # ("link: extra operand '/OPT:REF'"). Prefer the toolchain next to cl.
+          CL_BIN="$(dirname "$(command -v cl)")"
+          export PATH="${CL_BIN}:${PATH}"
+          hash -r
+          command -v cl
+          command -v link
+          link 2>&1 | head -n 2 || true
           scons -j"$(nproc)" platform=windows target=template_debug
           test -f addons/onnx_loader/bin/libonnx_loader.windows.template_debug.x86_64.dll
           test -f addons/onnx_loader/bin/onnxruntime.dll
