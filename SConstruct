@@ -134,10 +134,11 @@ else:
             "-Wno-unused-parameter",
             "-Wno-unused-variable",
             "-Wno-unused-but-set-parameter",
-            "-fno-gnu-unique",
         ],
     )
     if is_linux:
+        # GCC-only; Apple clang rejects -fno-gnu-unique.
+        env_cpp.Append(CXXFLAGS=["-fno-gnu-unique"])
         env_cpp.Append(LINKFLAGS=["-Wl,-z,noexecstack", "-static-libgcc", "-static-libstdc++"])
 
 runtime_lib = env_c.StaticLibrary("build/libonnx_runtime", runtime_c)

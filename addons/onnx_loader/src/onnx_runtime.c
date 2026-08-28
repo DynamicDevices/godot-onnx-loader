@@ -67,6 +67,13 @@ static int ort_fail(const OrtApi *ort, OrtStatus *st, const char *what)
 
 static int resolve_bundled_ort_path(char *out, size_t out_cap)
 {
+	/* Guard before any snprintf — GCC fortify -O2 (template_release) treats a
+	 * possibly-null out as -Werror=format-truncation / null destination. */
+	if (!out || out_cap < 2) {
+		return -1;
+	}
+	out[0] = '\0';
+
 #ifdef _WIN32
 	static const char *ort_names[] = {"onnxruntime.dll", NULL};
 #else
@@ -442,16 +449,44 @@ OnnxRuntime *onnx_runtime_create(const char *model_onnx_path)
 
 	if (ort_fail(ort, ort->CreateSessionOptions(&opts), "CreateSessionOptions") ||
 	    ort_fail(ort, ort->DisableCpuMemArena(opts), "DisableCpuMemArena") ||
-	    ort_fail(ort, ort->DisableMemPattern(opts), "DisableMemPattern") ||
-	    ort_fail(ort, ort->CreateSession(g_env, model_onnx_path, opts, &rt->session),
-		     "CreateSession")) {
+	    ort_fail(ort, ort->DisableMemPattern(opts), "DisableMemPattern")) {
 		if (opts) {
 			ort->ReleaseSessionOptions(opts);
 		}
+		onnx_runtime_destroy(rt);
+		return NULL;
+	}
+
+	/* Windows ORT CreateSession takes ORTCHAR_T (wchar_t); Unix takes UTF-8 char*. */
+#ifdef _WIN32
+	{
+		wchar_t wpath[4096];
+		int n = MultiByteToWideChar(CP_UTF8, 0, model_onnx_path, -1, wpath,
+					   (int)(sizeof(wpath) / sizeof(wpath[0])));
+		if (n <= 0) {
+			fprintf(stderr, "onnx_runtime_create: UTF-8→wchar path failed (%lu)\n",
+				(unsigned long)GetLastError());
+			ort->ReleaseSessionOptions(opts);
+			onnx_runtime_destroy(rt);
+			return NULL;
+		}
+		if (ort_fail(ort, ort->CreateSession(g_env, wpath, opts, &rt->session),
+			     "CreateSession")) {
+			ort->ReleaseSessionOptions(opts);
+			rt->session = NULL;
+			onnx_runtime_destroy(rt);
+			return NULL;
+		}
+	}
+#else
+	if (ort_fail(ort, ort->CreateSession(g_env, model_onnx_path, opts, &rt->session),
+		     "CreateSession")) {
+		ort->ReleaseSessionOptions(opts);
 		rt->session = NULL;
 		onnx_runtime_destroy(rt);
 		return NULL;
 	}
+#endif
 	ort->ReleaseSessionOptions(opts);
 	opts = NULL;
 	rt->session_live = 1;
@@ -568,11 +603,19 @@ const char *onnx_runtime_ort_library_path(void)
 	if (!ort) {
 		return "unknown";
 	}
+	if (g_ort_libpath[0]) {
+		return g_ort_libpath;
+	}
+#ifdef _WIN32
+	/* Path was recorded at LoadLibrary; no dladdr on MSVC. */
+	return "unknown";
+#else
 	Dl_info info;
 	if (dladdr((void *)ort->ReleaseSession, &info) && info.dli_fname && info.dli_fname[0]) {
 		return info.dli_fname;
 	}
 	return "unknown";
+#endif
 }
 
 uint32_t onnx_runtime_ort_api_version(void)

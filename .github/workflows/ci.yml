@@ -111,7 +111,8 @@ jobs:
             ! ldd "$so" | grep -q libonnxruntime
             ! ldd "$so" | grep -q libstdc++
             bash tools/smoke_bad_model.sh
-            bash tools/godot_csv_smoke.sh
+            # Editor smoke needs Godot 4.6+ (compatibility_minimum); flake GODOT_BIN is 4.5.
+            # Godot path is covered by nixos-godot-46-ms-ort.
           '
 
   nixos-godot-46-ms-ort:

@@ -40,13 +40,34 @@ if marker_ok; then
 	exit 0
 fi
 
+# Host PATH on self-hosted NixOS runners often lacks curl; flake puts it in
+# `nix develop` only. Prefer curl, then wget, then python3 urllib.
+download() {
+	local url="$1" dest="$2"
+	if command -v curl >/dev/null 2>&1; then
+		curl -fsSL -o "$dest" "$url"
+	elif command -v wget >/dev/null 2>&1; then
+		wget -q -O "$dest" "$url"
+	elif command -v python3 >/dev/null 2>&1; then
+		python3 - "$url" "$dest" <<'PY'
+import sys
+import urllib.request
+
+urllib.request.urlretrieve(sys.argv[1], sys.argv[2])
+PY
+	else
+		echo "fetch_ms_ort: need curl, wget, or python3 to download $url" >&2
+		exit 127
+	fi
+}
+
 mkdir -p "$(dirname "$DEST")"
 TMPDIR_FETCH="${TMPDIR:-/tmp}"
 case "$PLAT" in
 win-*)
 	ZIP="${ORT_ZIP:-${TMPDIR_FETCH}/${BASE}.zip}"
 	URL="https://github.com/microsoft/onnxruntime/releases/download/v${VER}/${BASE}.zip"
-	curl -fsSL -o "$ZIP" "$URL"
+	download "$URL" "$ZIP"
 	rm -rf "$DEST"
 	# zip may nest one directory
 	EXTRACT="${TMPDIR_FETCH}/ort-extract-$$"
@@ -63,7 +84,7 @@ win-*)
 *)
 	TGZ="${ORT_TGZ:-${TMPDIR_FETCH}/${BASE}.tgz}"
 	URL="https://github.com/microsoft/onnxruntime/releases/download/v${VER}/${BASE}.tgz"
-	curl -fsSL -o "$TGZ" "$URL"
+	download "$URL" "$TGZ"
 	rm -rf "$DEST"
 	tar -C "$(dirname "$DEST")" -xzf "$TGZ"
 	# tarball usually extracts as onnxruntime-$PLAT-$VER
