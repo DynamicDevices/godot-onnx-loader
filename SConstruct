@@ -71,6 +71,21 @@ if not godot_cpp.exists() or not os.listdir(str(godot_cpp.srcnode())):
 
 env = SConscript("godot-cpp/SConstruct")
 
+# Forward ORT/Godot shell env into SCons Command actions (default ENV is minimal).
+for _key in (
+    "ONNX_ORT_BIN",
+    "ORT_ROOT",
+    "ORT_LIB",
+    "ORT_BUNDLE",
+    "LD_LIBRARY_PATH",
+    "LIBRARY_PATH",
+    "C_INCLUDE_PATH",
+    "GODOT_BIN",
+    "ONNX_LOADER_SKIP_SESSION_RELEASE",
+):
+    if _key in os.environ and os.environ[_key]:
+        env["ENV"][_key] = os.environ[_key]
+
 ort_inc, ort_lib = _find_ort_header(ORT_ROOT)
 if not os.path.isfile(os.path.join(ort_inc, "onnxruntime_c_api.h")):
     print(f"ERROR: onnxruntime_c_api.h not found under ORT_ROOT={ORT_ROOT}", file=sys.stderr)
