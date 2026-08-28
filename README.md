@@ -83,6 +83,7 @@ vizemes-align/godot-demo/addons/onnx_loader -> ../../godot-onnx-loader/addons/on
 | `nix develop` + Godot 4.5 | Store ORT via `ONNX_ORT_BIN`; `godot_csv_smoke.sh` |
 | Godot 4.6 FHS on Nix | `bash tools/godot_46_ms_ort.sh` |
 | `resolve_bundled_ort_path` / missing `.so` | Ensure `addons/onnx_loader/bin/libonnxruntime.so.1` or set `ONNX_ORT_BIN` |
+| `cannot enable executable stack` on dlopen | glibc 2.41+ rejects RWE stacks; `clear_ort_execstack.py` runs on bundle / `godot_46_ms_ort.sh` |
 
 `ONNX_LOADER_SKIP_SESSION_RELEASE` defaults **on** (skips session+env release under
 Godot 4.6 teardown). Set `=0` only when testing ORT teardown deliberately.

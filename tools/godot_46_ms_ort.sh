@@ -36,6 +36,8 @@ if [[ ! -f "$ORT_SO" ]]; then
 	echo "godot_46_ms_ort: missing $ORT_SO after scons (ORT_ROOT=$ORT_ROOT ORT_BUNDLE=$ORT_BUNDLE)" >&2
 	exit 1
 fi
+# Clear execstack even on non-Nix hosts (glibc 2.41+).
+python3 "$ROOT/tools/clear_ort_execstack.py" "$ORT_SO"
 
 _run_godot_smoke() {
 	local godot="$1"
