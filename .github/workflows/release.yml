@@ -210,17 +210,10 @@ jobs:
           export ZIP="/tmp/godot-onnx-loader-${PKG_VER}-assetlib.zip"
           export ZIP_LINUX="/tmp/godot-onnx-loader-${PKG_VER}-linux-x86_64.zip"
           export REQUIRE_MULTI=1
+          export MAKE_LINUX_ZIP=1
           bash tools/package_assetlib_stage.sh
-          # Linux-only sibling zip (smaller) for existing Custom URL docs
-          OUT=/tmp/assetlib-linux-only
-          rm -rf "$OUT"
-          mkdir -p "$OUT/addons/onnx_loader/bin"
-          cp -a addons/onnx_loader/onnx_loader.gdextension addons/onnx_loader/README.md LICENSE \
-            "$OUT/addons/onnx_loader/"
-          cp -a LICENSE "$OUT/addons/onnx_loader/LICENSE"
-          cp -a addons/onnx_loader/bin/libonnx_loader.linux.template_*.so \
-            addons/onnx_loader/bin/libonnxruntime.so* "$OUT/addons/onnx_loader/bin/"
-          (cd "$OUT" && zip -rq "$ZIP_LINUX" addons)
+          test -f "$ZIP"
+          test -f "$ZIP_LINUX"
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
           echo "ZIP_LINUX=$ZIP_LINUX" >> "$GITHUB_ENV"
           ls -lh "$ZIP" "$ZIP_LINUX"
