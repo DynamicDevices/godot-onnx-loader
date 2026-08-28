@@ -158,6 +158,11 @@ jobs:
       - name: Install scons
         run: pip install scons
 
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Fetch MS ORT (win-x64)
         shell: bash
         run: |
@@ -172,6 +177,7 @@ jobs:
         run: |
           set -euo pipefail
           export ORT_ROOT ORT_BUNDLE
+          which cl
           scons -j"$(nproc)" platform=windows target=template_debug
           test -f addons/onnx_loader/bin/libonnx_loader.windows.template_debug.x86_64.dll
           test -f addons/onnx_loader/bin/onnxruntime.dll
