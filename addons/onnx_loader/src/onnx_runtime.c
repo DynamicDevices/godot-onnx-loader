@@ -88,20 +88,9 @@ static int resolve_bundled_ort_path(char *out, size_t out_cap)
 	static const char *ort_names[] = {"libonnxruntime.so.1", "libonnxruntime.so", NULL};
 #endif
 #endif
-	const char *env = getenv("ONNX_ORT_BIN");
-	if (env && env[0]) {
-		for (size_t i = 0; ort_names[i]; i++) {
-			snprintf(out, out_cap, "%s%c%s", env, ORT_PATH_SEP, ort_names[i]);
-			if (ort_readable(out)) {
-				return 0;
-			}
-		}
-		snprintf(out, out_cap, "%s", env);
-		if (ort_readable(out)) {
-			return 0;
-		}
-	}
-
+	/* Prefer ORT beside the GDExtension (AssetLib / just-works). ONNX_ORT_BIN is
+	 * a last-resort override — nix develop often sets it to a store ORT that
+	 * fails execstack under Godot 4.6. */
 #ifdef _WIN32
 	HMODULE self = NULL;
 	if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
@@ -127,7 +116,6 @@ static int resolve_bundled_ort_path(char *out, size_t out_cap)
 		}
 	}
 #else
-	/* Prefer ORT beside this DSO (GDExtension / host smoke linked with runtime). */
 	Dl_info info;
 	if (dladdr((void *)&resolve_bundled_ort_path, &info) && info.dli_fname && info.dli_fname[0]) {
 		char addon_path[4096];
@@ -174,6 +162,21 @@ static int resolve_bundled_ort_path(char *out, size_t out_cap)
 			return 0;
 		}
 	}
+
+	const char *env = getenv("ONNX_ORT_BIN");
+	if (env && env[0]) {
+		for (size_t i = 0; ort_names[i]; i++) {
+			snprintf(out, out_cap, "%s%c%s", env, ORT_PATH_SEP, ort_names[i]);
+			if (ort_readable(out)) {
+				return 0;
+			}
+		}
+		snprintf(out, out_cap, "%s", env);
+		if (ort_readable(out)) {
+			return 0;
+		}
+	}
+
 	fprintf(stderr,
 		"resolve_bundled_ort_path: need ORT shared lib beside the addon "
 		"(addons/onnx_loader/bin) or ONNX_ORT_BIN; see .gdextension [dependencies]\n");

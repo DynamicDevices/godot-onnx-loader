@@ -7,68 +7,243 @@ on:
 
 env:
   ORT_VER: "1.20.1"
-  ORT_ROOT: /tmp/onnxruntime-linux-x64-1.20.1
 
 jobs:
-  assetlib-linux:
+  build-linux:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     env:
+      ORT_ROOT: /tmp/onnxruntime-linux-x64-1.20.1
+      ORT_BUNDLE: "1"
       SCONS_CACHE: ${{ github.workspace }}/.scons-cache
     steps:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
-
+          fetch-depth: 1
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: |
-            requirements.txt
+      - uses: actions/cache/restore@v5
+        with:
+          path: .scons-cache
+          key: rel-scons-linux-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'SConstruct', 'addons/onnx_loader/src/**') }}-${{ github.sha }}
+          restore-keys: |
+            rel-scons-linux-
+      - run: pip install scons
+      - name: Build linux debug+release
+        run: |
+          set -euo pipefail
+          mkdir -p "$SCONS_CACHE"
+          chmod +x tools/fetch_ms_ort.sh tools/package_assetlib.sh
+          bash tools/fetch_ms_ort.sh
+          scons -j"$(nproc)" platform=linux target=template_debug
+          scons -j"$(nproc)" platform=linux target=template_release
+          test -f addons/onnx_loader/bin/libonnx_loader.linux.template_debug.x86_64.so
+          test -f addons/onnx_loader/bin/libonnx_loader.linux.template_release.x86_64.so
+          test -f addons/onnx_loader/bin/libonnxruntime.so.1
+          python3 tools/clear_ort_execstack.py --check addons/onnx_loader/bin/libonnxruntime.so.1
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bins-linux
+          path: |
+            addons/onnx_loader/bin/libonnx_loader.linux.template_*.so
+            addons/onnx_loader/bin/libonnxruntime.so*
+          if-no-files-found: error
+      - if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: .scons-cache
+          key: rel-scons-linux-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'SConstruct', 'addons/onnx_loader/src/**') }}-${{ github.sha }}
 
-      - name: Restore scons + ORT cache
-        uses: actions/cache@v5
+  build-windows:
+    runs-on: windows-latest
+    env:
+      ORT_VER: "1.20.1"
+      ORT_PLATFORM: win-x64
+      ORT_ROOT: ${{ github.workspace }}/.ort/onnxruntime-win-x64-1.20.1
+      ORT_BUNDLE: "1"
+      SCONS_CACHE: ${{ github.workspace }}/.scons-cache
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          fetch-depth: 1
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/cache/restore@v5
         with:
           path: |
             .scons-cache
-            /tmp/onnxruntime-linux-x64-1.20.1
-          key: onnx-loader-rel-${{ runner.os }}-${{ hashFiles('godot-cpp/**', 'SConstruct', 'addons/**', 'custom.py') }}
+            .ort
+          key: rel-scons-win-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'SConstruct', 'addons/onnx_loader/src/**') }}-${{ github.sha }}
           restore-keys: |
-            onnx-loader-rel-${{ runner.os }}-
-
-      - name: install scons
-        run: pip install scons
-
-      - name: Build Asset Library zip
+            rel-scons-win-
+      - run: pip install scons
+      - name: Setup MSVC (vcvars64 → GITHUB_ENV)
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          $install = & $vswhere -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+          $vcvars = Join-Path $install "VC\Auxiliary\Build\vcvars64.bat"
+          cmd /c "`"$vcvars`" && set" | ForEach-Object {
+            if ($_ -match '^(.*?)=(.*)$') {
+              $name = $Matches[1]; $value = $Matches[2]
+              if ($name -and $name -notmatch '^\(') {
+                Add-Content -Path $env:GITHUB_ENV -Value "$name=$value"
+              }
+            }
+          }
+      - name: Fetch ORT + scons debug+release
+        shell: bash
         run: |
           set -euo pipefail
-          export PKG_VER="${GITHUB_REF_NAME}"
-          export ZIP="/tmp/godot-onnx-loader-${PKG_VER}-linux-x86_64.zip"
-          chmod +x tools/package_assetlib.sh
-          bash tools/package_assetlib.sh
-          test -f "$ZIP"
-          echo "ZIP=$ZIP" >> "$GITHUB_ENV"
+          mkdir -p "$SCONS_CACHE"
+          chmod +x tools/fetch_ms_ort.sh
+          bash tools/fetch_ms_ort.sh
+          CL_BIN="$(dirname "$(command -v cl)")"
+          export PATH="${CL_BIN}:${PATH}"
+          hash -r
+          scons -j"$(nproc)" platform=windows target=template_debug
+          scons -j"$(nproc)" platform=windows target=template_release
+          test -f addons/onnx_loader/bin/libonnx_loader.windows.template_debug.x86_64.dll
+          test -f addons/onnx_loader/bin/libonnx_loader.windows.template_release.x86_64.dll
+          test -f addons/onnx_loader/bin/onnxruntime.dll
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bins-windows
+          path: |
+            addons/onnx_loader/bin/libonnx_loader.windows.template_*.dll
+            addons/onnx_loader/bin/onnxruntime.dll
+          if-no-files-found: error
+      - if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            .scons-cache
+            .ort
+          key: rel-scons-win-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'SConstruct', 'addons/onnx_loader/src/**') }}-${{ github.sha }}
 
-      - name: Create GitHub Release with zip
+  build-macos:
+    runs-on: macos-latest
+    env:
+      ORT_VER: "1.20.1"
+      ORT_PLATFORM: osx-arm64
+      ORT_ROOT: ${{ github.workspace }}/.ort/onnxruntime-osx-arm64-1.20.1
+      ORT_BUNDLE: "1"
+      SCONS_CACHE: ${{ github.workspace }}/.scons-cache
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          fetch-depth: 1
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/cache/restore@v5
+        with:
+          path: |
+            .scons-cache
+            .ort
+          key: rel-scons-mac-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'SConstruct', 'addons/onnx_loader/src/**') }}-${{ github.sha }}
+          restore-keys: |
+            rel-scons-mac-
+      - run: pip install scons
+      - name: Fetch ORT + scons debug+release
+        run: |
+          set -euo pipefail
+          mkdir -p "$SCONS_CACHE"
+          chmod +x tools/fetch_ms_ort.sh
+          bash tools/fetch_ms_ort.sh
+          scons -j"$(sysctl -n hw.ncpu)" platform=macos target=template_debug
+          scons -j"$(sysctl -n hw.ncpu)" platform=macos target=template_release
+          test -d addons/onnx_loader/bin/libonnx_loader.macos.template_debug.framework
+          test -d addons/onnx_loader/bin/libonnx_loader.macos.template_release.framework
+          test -f addons/onnx_loader/bin/libonnxruntime.dylib
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bins-macos
+          path: |
+            addons/onnx_loader/bin/libonnx_loader.macos.template_debug.framework
+            addons/onnx_loader/bin/libonnx_loader.macos.template_release.framework
+            addons/onnx_loader/bin/libonnxruntime*.dylib
+          if-no-files-found: error
+      - if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            .scons-cache
+            .ort
+          key: rel-scons-mac-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'SConstruct', 'addons/onnx_loader/src/**') }}-${{ github.sha }}
+
+  assetlib-package:
+    needs: [build-linux, build-windows, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      - uses: actions/download-artifact@v7
+        with:
+          name: bins-linux
+          path: addons/onnx_loader/bin
+      - uses: actions/download-artifact@v7
+        with:
+          name: bins-windows
+          path: addons/onnx_loader/bin
+      - uses: actions/download-artifact@v7
+        with:
+          name: bins-macos
+          path: addons/onnx_loader/bin
+      - name: Build multi-platform Asset Library zip
+        run: |
+          set -euo pipefail
+          chmod +x tools/package_assetlib_stage.sh
+          export PKG_VER="${GITHUB_REF_NAME}"
+          export ZIP="/tmp/godot-onnx-loader-${PKG_VER}-assetlib.zip"
+          export ZIP_LINUX="/tmp/godot-onnx-loader-${PKG_VER}-linux-x86_64.zip"
+          export REQUIRE_MULTI=1
+          bash tools/package_assetlib_stage.sh
+          # Linux-only sibling zip (smaller) for existing Custom URL docs
+          OUT=/tmp/assetlib-linux-only
+          rm -rf "$OUT"
+          mkdir -p "$OUT/addons/onnx_loader/bin"
+          cp -a addons/onnx_loader/onnx_loader.gdextension addons/onnx_loader/README.md LICENSE \
+            "$OUT/addons/onnx_loader/"
+          cp -a LICENSE "$OUT/addons/onnx_loader/LICENSE"
+          cp -a addons/onnx_loader/bin/libonnx_loader.linux.template_*.so \
+            addons/onnx_loader/bin/libonnxruntime.so* "$OUT/addons/onnx_loader/bin/"
+          (cd "$OUT" && zip -rq "$ZIP_LINUX" addons)
+          echo "ZIP=$ZIP" >> "$GITHUB_ENV"
+          echo "ZIP_LINUX=$ZIP_LINUX" >> "$GITHUB_ENV"
+          ls -lh "$ZIP" "$ZIP_LINUX"
+      - name: Create / update GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           notes="$(cat <<EOF
-          Asset Library / project zip for Godot **4.6+** (Linux x86_64).
+          Asset Library zip for Godot **4.6+**.
 
-          Unzip and copy \`addons/onnx_loader/\` into your Godot project.
-          Bundles Microsoft ONNX Runtime ${ORT_VER} (debug + release templates).
+          - \`godot-onnx-loader-${GITHUB_REF_NAME}-assetlib.zip\` — **Linux + Windows + macOS** (debug + release) with Microsoft ONNX Runtime ${{ env.ORT_VER }}
+          - \`godot-onnx-loader-${GITHUB_REF_NAME}-linux-x86_64.zip\` — Linux-only (smaller)
 
-          AssetLib submit: Custom download URL → this zip asset.
+          Unzip and copy \`addons/onnx_loader/\` into your Godot project. No \`scons\` required.
+
+          AssetLib: Download provider **Custom** → direct zip URL below.
           EOF
           )"
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" "$ZIP" --clobber
+            gh release upload "$GITHUB_REF_NAME" "$ZIP" "$ZIP_LINUX" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" "$ZIP" \
-              --title "$GITHUB_REF_NAME — Asset Library Linux x86_64" \
+            gh release create "$GITHUB_REF_NAME" "$ZIP" "$ZIP_LINUX" \
+              --title "$GITHUB_REF_NAME — Asset Library (multi-platform)" \
               --notes "$notes"
           fi

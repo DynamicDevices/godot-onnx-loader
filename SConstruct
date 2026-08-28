@@ -220,6 +220,21 @@ def _bundle_ort_libs(target, source, env):
             f"ORT_BUNDLE=1 but no ORT shared lib copied from {ort_lib} (names={names})"
         )
 
+    if is_macos:
+        # .gdextension [dependencies] lists libonnxruntime.dylib — ensure that name
+        # exists even when MS only ships the versioned dylib.
+        plain = os.path.join(dest_dir, "libonnxruntime.dylib")
+        if not os.path.isfile(plain):
+            for ver in ("libonnxruntime.1.20.1.dylib", "libonnxruntime.1.dylib"):
+                src_ver = os.path.join(dest_dir, ver)
+                if os.path.isfile(src_ver):
+                    shutil.copy2(src_ver, plain)
+                    break
+            if not os.path.isfile(plain):
+                raise RuntimeError(
+                    "ORT_BUNDLE=1 macos: need libonnxruntime.dylib beside the addon"
+                )
+
     if is_linux:
         import subprocess
 
