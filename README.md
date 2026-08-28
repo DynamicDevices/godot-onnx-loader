@@ -48,12 +48,27 @@ addon:
 Open `demo/` in Godot 4.5+ → run `csv_smoke.tscn` → expect `GODOT_ONNX_CSV_SMOKE_OK`.
 (`demo/.godot/` is local editor cache; do not commit it.)
 
-### Godot 4.6 on NixOS
+### Godot 4.6 on NixOS (should just work after build)
+
+Do **not** use the `nix develop` store copy of ONNX Runtime for Godot 4.6.
+Build once with the Microsoft runtime bundled (SCons patches it for Nix):
 
 ```bash
-# Prefer a normal login shell — not inside `nix develop`
-bash tools/godot_46_ms_ort.sh   # expect GODOT_46_MS_ORT_SMOKE_OK
+# plain shell (outside nix develop)
+bash tools/fetch_ms_ort.sh
+export ORT_ROOT=/tmp/onnxruntime-linux-x64-1.20.1 ORT_BUNDLE=1
+unset ONNX_ORT_BIN
+scons platform=linux target=template_debug
 ```
+
+Then open the demo with Godot 4.6 normally — no special wrapper:
+
+```bash
+nix shell github:nixos/nixpkgs/nixos-26.05#godot_4_6 -c godot4 --path demo
+# or: Godot project manager → Import → demo/
+```
+
+One-shot build + headless check (CI uses this): `bash tools/godot_46_ms_ort.sh`.
 
 ### Portable zip
 
