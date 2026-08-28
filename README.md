@@ -184,7 +184,19 @@ vizemes-align training. Bundled `libonnxruntime` is Microsoft ONNX Runtime
 
 ## Asset Library submit (maintainers)
 
-1. Tag `vX.Y.Z` → `release.yml` attaches `godot-onnx-loader-vX.Y.Z-linux-x86_64.zip`.
-2. On [Asset Library submit](https://godotengine.org/asset-library/asset/submit):
-   Download provider **Custom**, Download URL = direct GitHub Release asset link,
-   Minimum Godot version **4.6**, note Linux x86_64 only.
+Checklist for [godotengine.org/asset-library/asset/submit](https://godotengine.org/asset-library/asset/submit):
+
+1. Push tag `vX.Y.Z` on `main` → workflow `release.yml` builds and attaches
+   `godot-onnx-loader-vX.Y.Z-linux-x86_64.zip` to the GitHub Release.
+2. Copy the **direct** release asset URL (not an Actions artifact URL — those expire), e.g.
+   `https://github.com/DynamicDevices/godot-onnx-loader/releases/download/v0.2.0/godot-onnx-loader-v0.2.0-linux-x86_64.zip`
+3. Submit form fields:
+   - **Title:** OnnxLoader (or godot-onnx-loader)
+   - **Category:** Scripts / Tools (Misc is fine if Scripts is a poor fit)
+   - **Godot version / Minimum:** **4.6**
+   - **Download provider:** **Custom**
+   - **Download URL:** the zip URL from step 2
+   - **Description:** GDExtension for running ONNX models (Microsoft ONNX Runtime 1.20.1 bundled). **Linux x86_64 only** in this package (debug + release). Windows/macOS builds exist in CI but are not in the AssetLib zip yet. NixOS: prefer building from the git repo.
+   - **License:** MIT
+4. After listing, update the Install section above with the AssetLib page link.
+5. Review can take days; do not point Custom URL at a CI artifact.
