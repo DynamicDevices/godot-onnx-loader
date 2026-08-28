@@ -29,19 +29,20 @@ Fork/refreshed from [mat490/Godot-ONNX-AI-Models-Loaders](https://github.com/mat
 
 ## Install (Godot project)
 
-**Easiest (Linux x86_64):** download the Asset Library zip from the
-[latest release](https://github.com/DynamicDevices/godot-onnx-loader/releases/latest)
-(`godot-onnx-loader-*-linux-x86_64.zip`), unzip, and copy `addons/onnx_loader/`
-into your project. Restart the editor / enable the GDExtension if prompted.
+**Easiest:** download a zip from the
+[latest release](https://github.com/DynamicDevices/godot-onnx-loader/releases/latest),
+unzip, and copy `addons/onnx_loader/` into your project. Restart the editor / enable
+the GDExtension if prompted.
+
+- **Multi-platform** (Linux + Windows + macOS): `godot-onnx-loader-*-assetlib.zip`
+- **Linux only** (smaller): `godot-onnx-loader-*-linux-x86_64.zip`
 
 When listed on the [Godot Asset Library](https://godotengine.org/asset-library/asset),
-you can also install from the editor: **AssetLib** → search **onnx-loader**.
+you can also install from the editor: **AssetLib** → search **OnnxLoader**.
 
-This package is **Linux x86_64** in the Asset Library zip today (debug + release
-templates) and bundles Microsoft ONNX Runtime 1.20.1. **Windows** and **macOS**
-GDExtension builds are covered in CI (GitHub-hosted `windows-latest` /
-`macos-latest`); multi-platform release zips are next. NixOS: prefer building
-from source (`tools/godot_46_ms_ort.sh`) rather than the glibc release zip.
+Bundles Microsoft ONNX Runtime 1.20.1. The addon loads ORT **from its own `bin/`**
+first (no env vars). NixOS: prefer building from source (`tools/godot_46_ms_ort.sh`)
+if the glibc prebuild does not match your Godot FHS wrapper.
 
 ## Quick start (build from source)
 
