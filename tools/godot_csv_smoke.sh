@@ -4,7 +4,6 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 GODOT="${GODOT_BIN:-${GODOT:-${HOME}/Downloads/Godot_v4.6.1-stable_linux.x86_64}}"
-ORT_ROOT="${ORT_ROOT:-/tmp/onnxruntime-linux-x64-1.20.1}"
 OUT="${OUT:-/tmp/godot-onnx-loader-csv-smoke.txt}"
 ORT_BUNDLE="${ORT_BUNDLE:-1}"
 
@@ -12,7 +11,12 @@ if [[ ! -x "$GODOT" ]]; then
 	echo "GODOT_BIN must point at Godot 4.x (nix develop sets godot_4)" >&2
 	exit 1
 fi
-if [[ ! -f "$ORT_ROOT/lib/libonnxruntime.so.1" && -z "${ONNX_ORT_BIN:-}" ]]; then
+
+if [[ -z "${ONNX_ORT_BIN:-}" ]]; then
+	ORT_ROOT="$(bash "$ROOT/tools/ensure_ort.sh")"
+	export ORT_ROOT
+fi
+if [[ ! -f "${ORT_ROOT:-}/lib/libonnxruntime.so.1" && -z "${ONNX_ORT_BIN:-}" ]]; then
 	echo "ORT_ROOT missing libonnxruntime.so.1 (set ORT_ROOT or nix develop)" >&2
 	exit 1
 fi
@@ -30,6 +34,7 @@ fi
 if [[ -z "${ONNX_ORT_BIN:-}" ]]; then
 	unset LD_LIBRARY_PATH
 fi
+bash "$ROOT/tools/ensure_demo_extension.sh"
 cd "$ROOT/demo"
 "$GODOT" --headless --path . --quit-after 1 res://csv_smoke.tscn 2>&1 | tee "$OUT"
 grep -q GODOT_ONNX_CSV_SMOKE_OK "$OUT"

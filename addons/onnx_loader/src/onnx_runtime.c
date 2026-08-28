@@ -105,8 +105,10 @@ static const OrtApi *ort_api(void)
 #endif
 		g_ort_dlhandle = dlopen(g_ort_libpath, RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
 		if (!g_ort_dlhandle) {
+			/* dlerror() is single-shot — capture once (double-call always printed "(null)"). */
+			const char *dlerr = dlerror();
 			fprintf(stderr, "dlopen ORT %s: %s\n", g_ort_libpath,
-				dlerror() ? dlerror() : "(null)");
+				dlerr && dlerr[0] ? dlerr : "(null)");
 			g_ort_libpath[0] = '\0';
 			return NULL;
 		}

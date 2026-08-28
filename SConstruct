@@ -27,15 +27,42 @@ def _find_ort_header(root):
     return inc_candidates[0], lib
 
 
-ORT_ROOT = ARGUMENTS.get("ort_root", os.environ.get("ORT_ROOT", ""))
-if not ORT_ROOT or not os.path.isdir(ORT_ROOT):
-    print(
-        "ORT_ROOT / ort_root= must point at an ONNX Runtime prefix (include/ + lib/).\n"
-        "  nix develop   # sets ORT_ROOT\n"
-        "  scons platform=linux target=template_debug",
-        file=sys.stderr,
-    )
-    sys.exit(1)
+def _ensure_ort_root():
+    """Resolve ORT_ROOT: env/arg, else tools/ensure_ort.sh (fetch MS 1.20.1)."""
+    root = ARGUMENTS.get("ort_root", os.environ.get("ORT_ROOT", ""))
+    if root and os.path.isdir(root) and os.path.isfile(
+        os.path.join(root, "include", "onnxruntime_c_api.h")
+    ):
+        return root
+    # Header may live under include/onnxruntime/ on some prefixes.
+    if root and os.path.isdir(root):
+        for sub in ("include", os.path.join("include", "onnxruntime")):
+            if os.path.isfile(os.path.join(root, sub, "onnxruntime_c_api.h")):
+                return root
+    ensure = os.path.join(Dir(".").srcnode().abspath, "tools", "ensure_ort.sh")
+    if not os.path.isfile(ensure):
+        print(
+            "ORT_ROOT unset and tools/ensure_ort.sh missing.\n"
+            "  nix develop   # sets ORT_ROOT\n"
+            "  bash tools/fetch_ms_ort.sh && export ORT_ROOT=/tmp/onnxruntime-linux-x64-1.20.1",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    import subprocess
+
+    print("ORT_ROOT unset — ensuring MS ONNX Runtime via tools/ensure_ort.sh", file=sys.stderr)
+    out = subprocess.check_output(["bash", ensure], text=True).strip()
+    if not out or not os.path.isdir(out):
+        print(f"ensure_ort.sh returned unusable path: {out!r}", file=sys.stderr)
+        sys.exit(1)
+    os.environ["ORT_ROOT"] = out
+    if "ORT_BUNDLE" not in os.environ:
+        os.environ["ORT_BUNDLE"] = "1"
+    print(f"ORT_ROOT={out}", file=sys.stderr)
+    return out
+
+
+ORT_ROOT = _ensure_ort_root()
 
 godot_cpp = Dir("godot-cpp")
 if not godot_cpp.exists() or not os.listdir(str(godot_cpp.srcnode())):
