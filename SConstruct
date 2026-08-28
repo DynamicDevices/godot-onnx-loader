@@ -208,6 +208,17 @@ def _bundle_ort_libs(target, source, env):
     import subprocess
 
     subprocess.check_call(["python3", "tools/clear_ort_execstack.py", so1])
+    # On NixOS, also patchelf + copy libstdc++ beside ORT so Godot 4.6 can
+    # dlopen without a special launcher (Julian/Alex: must "just work").
+    on_nix = os.path.isdir("/nix/store") or bool(os.environ.get("NIX_CXX_LIB"))
+    if on_nix:
+        patch_env = os.environ.copy()
+        patch_env["REQUIRE_NIX_PATCH"] = "1"
+        subprocess.check_call(
+            ["bash", "tools/patch_bundled_ort_rpath.sh"],
+            env=patch_env,
+        )
+        subprocess.check_call(["python3", "tools/clear_ort_execstack.py", "--check", so1])
     return None
 
 

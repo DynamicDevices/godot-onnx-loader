@@ -65,5 +65,6 @@ fi
 
 # patchelf can re-introduce oddities — clear again after rpath edits.
 python3 "$ROOT/tools/clear_ort_execstack.py" "$ORT_SO"
+python3 "$ROOT/tools/clear_ort_execstack.py" --check "$ORT_SO"
 
 echo "ONNX_ORT_RPATH_OK cxx=$CXX_LIB origin=\$ORIGIN ort=$ORT_SO"

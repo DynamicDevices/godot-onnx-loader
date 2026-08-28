@@ -7,6 +7,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ORT_MS="${ORT_MS:-/tmp/onnxruntime-linux-x64-1.20.1}"
 OUT="${OUT:-/tmp/godot-onnx-loader-csv-smoke-46-ms.txt}"
+# Separate cache from `nix develop` builds (different gcc/nixpkgs → full rebuilds).
+export SCONS_CACHE="${SCONS_CACHE:-$ROOT/.scons-cache-godot46-ms}"
+mkdir -p "$SCONS_CACHE"
 # Godot 4.6 + gcc runtime must come from the same nixpkgs rev (Nix path only).
 NIXPKGS="${NIXPKGS:-github:nixos/nixpkgs/nixos-26.05}"
 
@@ -38,6 +41,7 @@ if [[ ! -f "$ORT_SO" ]]; then
 fi
 # Clear execstack even on non-Nix hosts (glibc 2.41+).
 python3 "$ROOT/tools/clear_ort_execstack.py" "$ORT_SO"
+python3 "$ROOT/tools/clear_ort_execstack.py" --check "$ORT_SO"
 
 _run_godot_smoke() {
 	local godot="$1"

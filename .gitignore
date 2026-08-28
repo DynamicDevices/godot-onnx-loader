@@ -13,3 +13,5 @@ result
 .godot/
 **/.godot/
 *.uid
+.scons-cache/
+.scons-cache-*/

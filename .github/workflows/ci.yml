@@ -27,7 +27,7 @@ jobs:
             requirements.txt
 
       - name: Restore scons + ORT cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             .scons-cache
@@ -68,6 +68,9 @@ jobs:
           grep -q 'ONNX_LOADER_CSV_SMOKE_OK' /tmp/onnx-loader-smoke-csv.txt
           grep -q 'hit_rate=' /tmp/onnx-loader-smoke-csv.txt
           grep -q 'ONNX_DLOPEN_TEARDOWN_OK' /tmp/onnx-loader-smoke-dlopen.txt
+          python3 tools/clear_ort_execstack.py --check addons/onnx_loader/bin/libonnxruntime.so.1
+          chmod +x tools/ci_julian_regressions.sh
+          bash tools/ci_julian_regressions.sh
           chmod +x tools/package_linux_portable.sh
           SKIP_SCONS=1 ORT_ROOT="$ORT_ROOT" bash tools/package_linux_portable.sh
           test -f /tmp/godot-onnx-loader-linux-x64-portable.zip
@@ -123,4 +126,11 @@ jobs:
           set -euo pipefail
           mkdir -p "$SCONS_CACHE"
           export SCONS_CACHE
+          # Inject Julian's glibc-2.41 execstack failure mode before the script
+          # clears/patches — stock MS ORT is often already RW, so CI would miss it.
+          bash tools/fetch_ms_ort.sh
+          python3 tools/clear_ort_execstack.py --force-rwe \
+            "${ORT_ROOT}/lib/libonnxruntime.so.1"
           bash tools/godot_46_ms_ort.sh
+          python3 tools/clear_ort_execstack.py --check \
+            addons/onnx_loader/bin/libonnxruntime.so.1
