@@ -1,7 +1,11 @@
 # godot-onnx-loader
 
+[![CI](https://github.com/DynamicDevices/godot-onnx-loader/actions/workflows/ci.yml/badge.svg)](https://github.com/DynamicDevices/godot-onnx-loader/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/DynamicDevices/godot-onnx-loader)](https://github.com/DynamicDevices/godot-onnx-loader/releases/latest)
+[![Godot](https://img.shields.io/badge/Godot-4.5%2B-blue?logo=godotengine&logoColor=white)](https://godotengine.org/)
+
 A small [Godot](https://godotengine.org/) 4.5+ addon that runs **ONNX** machine-learning
-models inside a game/project.
+models inside a game/project. Godot **4.6** verified with Microsoft ONNX Runtime 1.20.1.
 
 - **ONNX** ([Open Neural Network Exchange](https://onnx.ai/)) is a common file format
   (`.onnx`) for trained models so different tools can share them.
