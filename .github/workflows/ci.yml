@@ -99,7 +99,7 @@ jobs:
             set -euo pipefail
             export SCONS_CACHE='"$SCONS_CACHE"'
             git submodule update --init --recursive
-            scons -j"$(nproc)" platform=linux target=template_debug smoke-dlopen-ort
+            scons -j"$(nproc)" platform=linux target=template_debug smoke-csv smoke-dlopen-ort
             so=addons/onnx_loader/bin/libonnx_loader.linux.template_debug.x86_64.so
             test -f "$so"
             ! ldd "$so" | grep -q libonnxruntime

@@ -58,6 +58,7 @@ static int resolve_bundled_ort_path(char *out, size_t out_cap)
 		}
 	}
 
+	/* Prefer ORT beside this DSO (GDExtension / host smoke linked with runtime). */
 	Dl_info info;
 	if (dladdr((void *)&resolve_bundled_ort_path, &info) && info.dli_fname && info.dli_fname[0]) {
 		char addon_path[4096];
@@ -66,6 +67,12 @@ static int resolve_bundled_ort_path(char *out, size_t out_cap)
 		if (slash) {
 			int n = snprintf(out, out_cap, "%.*s/libonnxruntime.so.1",
 					 (int)(slash - addon_path), addon_path);
+			if (n > 0 && (size_t)n < out_cap && access(out, R_OK) == 0) {
+				return 0;
+			}
+			/* Host smoke lives in build/ — walk up to addon bin (Godot deps layout). */
+			n = snprintf(out, out_cap, "%.*s/../addons/onnx_loader/bin/libonnxruntime.so.1",
+				     (int)(slash - addon_path), addon_path);
 			if (n > 0 && (size_t)n < out_cap && access(out, R_OK) == 0) {
 				return 0;
 			}
@@ -83,6 +90,9 @@ static int resolve_bundled_ort_path(char *out, size_t out_cap)
 			return 0;
 		}
 	}
+	fprintf(stderr,
+		"resolve_bundled_ort_path: need libonnxruntime.so.1 beside the addon "
+		"(addons/onnx_loader/bin) or ONNX_ORT_BIN; see .gdextension [dependencies]\n");
 	return -1;
 }
 
@@ -97,7 +107,6 @@ static const OrtApi *ort_api(void)
 
 	if (!g_ort_dlhandle) {
 		if (resolve_bundled_ort_path(g_ort_libpath, sizeof(g_ort_libpath)) != 0) {
-			fprintf(stderr, "resolve_bundled_ort_path failed\n");
 			return NULL;
 		}
 #ifndef RTLD_DEEPBIND
