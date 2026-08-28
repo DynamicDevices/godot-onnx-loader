@@ -207,10 +207,28 @@ jobs:
       - name: Install scons
         run: pip install scons
 
-      - name: Setup MSVC
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
+      - name: Setup MSVC (vcvars64 → GITHUB_ENV)
+        # Avoid ilammy/msvc-dev-cmd (Node 20, largely unmaintained).
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) { throw "vswhere.exe not found" }
+          $install = & $vswhere -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+          if (-not $install) { throw "Visual Studio with VC tools not found" }
+          $vcvars = Join-Path $install "VC\Auxiliary\Build\vcvars64.bat"
+          if (-not (Test-Path $vcvars)) { throw "missing $vcvars" }
+          cmd /c "`"$vcvars`" && set" | ForEach-Object {
+            if ($_ -match '^(.*?)=(.*)$') {
+              $name = $Matches[1]
+              $value = $Matches[2]
+              if ($name -and $name -notmatch '^\(') {
+                Add-Content -Path $env:GITHUB_ENV -Value "$name=$value"
+              }
+            }
+          }
+          Write-Host "MSVC env from $vcvars"
 
       - name: Fetch MS ORT (win-x64)
         shell: bash
