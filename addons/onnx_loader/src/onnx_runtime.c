@@ -1,16 +1,37 @@
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <io.h>
+#else
 #define _GNU_SOURCE
+#include <dlfcn.h>
+#include <unistd.h>
+#endif
+
 #include "onnx_runtime.h"
 
-#include <dlfcn.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 #include "onnxruntime_c_api.h"
 
 #define ONNX_NAME_MAX 128
+
+#ifdef _WIN32
+#define ORT_PATH_SEP '\\'
+static int ort_readable(const char *path)
+{
+	return path && path[0] && _access(path, 0) == 0;
+}
+#else
+#define ORT_PATH_SEP '/'
+static int ort_readable(const char *path)
+{
+	return path && path[0] && access(path, R_OK) == 0;
+}
+#endif
 
 struct OnnxRuntime {
 	const OrtApi *ort;
@@ -46,18 +67,59 @@ static int ort_fail(const OrtApi *ort, OrtStatus *st, const char *what)
 
 static int resolve_bundled_ort_path(char *out, size_t out_cap)
 {
+#ifdef _WIN32
+	static const char *ort_names[] = {"onnxruntime.dll", NULL};
+#else
+#ifdef __APPLE__
+	static const char *ort_names[] = {
+		"libonnxruntime.1.20.1.dylib",
+		"libonnxruntime.dylib",
+		"libonnxruntime.so.1",
+		NULL,
+	};
+#else
+	static const char *ort_names[] = {"libonnxruntime.so.1", "libonnxruntime.so", NULL};
+#endif
+#endif
 	const char *env = getenv("ONNX_ORT_BIN");
 	if (env && env[0]) {
-		snprintf(out, out_cap, "%s/libonnxruntime.so.1", env);
-		if (access(out, R_OK) == 0) {
-			return 0;
+		for (size_t i = 0; ort_names[i]; i++) {
+			snprintf(out, out_cap, "%s%c%s", env, ORT_PATH_SEP, ort_names[i]);
+			if (ort_readable(out)) {
+				return 0;
+			}
 		}
 		snprintf(out, out_cap, "%s", env);
-		if (access(out, R_OK) == 0) {
+		if (ort_readable(out)) {
 			return 0;
 		}
 	}
 
+#ifdef _WIN32
+	HMODULE self = NULL;
+	if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+				   GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+			       (LPCSTR)&resolve_bundled_ort_path, &self) &&
+	    self) {
+		char addon_path[4096];
+		DWORD n = GetModuleFileNameA(self, addon_path, sizeof(addon_path));
+		if (n > 0 && n < sizeof(addon_path)) {
+			char *slash = strrchr(addon_path, '\\');
+			if (!slash) {
+				slash = strrchr(addon_path, '/');
+			}
+			if (slash) {
+				*slash = '\0';
+				for (size_t i = 0; ort_names[i]; i++) {
+					snprintf(out, out_cap, "%s\\%s", addon_path, ort_names[i]);
+					if (ort_readable(out)) {
+						return 0;
+					}
+				}
+			}
+		}
+	}
+#else
 	/* Prefer ORT beside this DSO (GDExtension / host smoke linked with runtime). */
 	Dl_info info;
 	if (dladdr((void *)&resolve_bundled_ort_path, &info) && info.dli_fname && info.dli_fname[0]) {
@@ -65,35 +127,71 @@ static int resolve_bundled_ort_path(char *out, size_t out_cap)
 		snprintf(addon_path, sizeof(addon_path), "%s", info.dli_fname);
 		char *slash = strrchr(addon_path, '/');
 		if (slash) {
-			int n = snprintf(out, out_cap, "%.*s/libonnxruntime.so.1",
-					 (int)(slash - addon_path), addon_path);
-			if (n > 0 && (size_t)n < out_cap && access(out, R_OK) == 0) {
-				return 0;
+			for (size_t i = 0; ort_names[i]; i++) {
+				int n = snprintf(out, out_cap, "%.*s/%s",
+						 (int)(slash - addon_path), addon_path, ort_names[i]);
+				if (n > 0 && (size_t)n < out_cap && ort_readable(out)) {
+					return 0;
+				}
 			}
-			/* Host smoke lives in build/ — walk up to addon bin (Godot deps layout). */
-			n = snprintf(out, out_cap, "%.*s/../addons/onnx_loader/bin/libonnxruntime.so.1",
-				     (int)(slash - addon_path), addon_path);
-			if (n > 0 && (size_t)n < out_cap && access(out, R_OK) == 0) {
-				return 0;
+			for (size_t i = 0; ort_names[i]; i++) {
+				int n = snprintf(out, out_cap,
+						 "%.*s/../addons/onnx_loader/bin/%s",
+						 (int)(slash - addon_path), addon_path, ort_names[i]);
+				if (n > 0 && (size_t)n < out_cap && ort_readable(out)) {
+					return 0;
+				}
 			}
 		}
 	}
+#endif
 
 	static const char *candidates[] = {
+#ifdef _WIN32
+		"addons/onnx_loader/bin/onnxruntime.dll",
+		"demo/addons/onnx_loader/bin/onnxruntime.dll",
+#else
+#ifdef __APPLE__
+		"addons/onnx_loader/bin/libonnxruntime.dylib",
+		"addons/onnx_loader/bin/libonnxruntime.1.20.1.dylib",
+		"demo/addons/onnx_loader/bin/libonnxruntime.dylib",
+#endif
 		"addons/onnx_loader/bin/libonnxruntime.so.1",
 		"demo/addons/onnx_loader/bin/libonnxruntime.so.1",
+#endif
 		NULL,
 	};
 	for (size_t i = 0; candidates[i]; i++) {
-		if (access(candidates[i], R_OK) == 0) {
+		if (ort_readable(candidates[i])) {
 			snprintf(out, out_cap, "%s", candidates[i]);
 			return 0;
 		}
 	}
 	fprintf(stderr,
-		"resolve_bundled_ort_path: need libonnxruntime.so.1 beside the addon "
+		"resolve_bundled_ort_path: need ORT shared lib beside the addon "
 		"(addons/onnx_loader/bin) or ONNX_ORT_BIN; see .gdextension [dependencies]\n");
 	return -1;
+}
+
+static void *ort_dlsym(void *handle, const char *name)
+{
+#ifdef _WIN32
+	return (void *)GetProcAddress((HMODULE)handle, name);
+#else
+	return dlsym(handle, name);
+#endif
+}
+
+static void ort_dlclose(void *handle)
+{
+	if (!handle) {
+		return;
+	}
+#ifdef _WIN32
+	FreeLibrary((HMODULE)handle);
+#else
+	dlclose(handle);
+#endif
 }
 
 static const OrtApi *ort_api(void)
@@ -109,6 +207,15 @@ static const OrtApi *ort_api(void)
 		if (resolve_bundled_ort_path(g_ort_libpath, sizeof(g_ort_libpath)) != 0) {
 			return NULL;
 		}
+#ifdef _WIN32
+		g_ort_dlhandle = (void *)LoadLibraryA(g_ort_libpath);
+		if (!g_ort_dlhandle) {
+			fprintf(stderr, "LoadLibrary ORT %s: error %lu\n", g_ort_libpath,
+				(unsigned long)GetLastError());
+			g_ort_libpath[0] = '\0';
+			return NULL;
+		}
+#else
 #ifndef RTLD_DEEPBIND
 #define RTLD_DEEPBIND 0
 #endif
@@ -121,16 +228,17 @@ static const OrtApi *ort_api(void)
 			g_ort_libpath[0] = '\0';
 			return NULL;
 		}
-		get_base = (OrtGetApiBaseFn)dlsym(g_ort_dlhandle, "OrtGetApiBase");
+#endif
+		get_base = (OrtGetApiBaseFn)ort_dlsym(g_ort_dlhandle, "OrtGetApiBase");
 		if (!get_base) {
-			fprintf(stderr, "dlsym OrtGetApiBase: %s\n", dlerror());
-			dlclose(g_ort_dlhandle);
+			fprintf(stderr, "ort_dlsym OrtGetApiBase failed\n");
+			ort_dlclose(g_ort_dlhandle);
 			g_ort_dlhandle = NULL;
 			g_ort_libpath[0] = '\0';
 			return NULL;
 		}
 	} else {
-		get_base = (OrtGetApiBaseFn)dlsym(g_ort_dlhandle, "OrtGetApiBase");
+		get_base = (OrtGetApiBaseFn)ort_dlsym(g_ort_dlhandle, "OrtGetApiBase");
 	}
 
 	const OrtApiBase *base = get_base ? get_base() : NULL;
@@ -303,7 +411,7 @@ OnnxRuntime *onnx_runtime_create(const char *model_onnx_path)
 		fprintf(stderr, "onnx_runtime_create: empty model path\n");
 		return NULL;
 	}
-	if (access(model_onnx_path, R_OK) != 0) {
+	if (!ort_readable(model_onnx_path)) {
 		fprintf(stderr, "onnx_runtime_create: model not found: %s\n", model_onnx_path);
 		return NULL;
 	}
@@ -440,7 +548,7 @@ const char *onnx_runtime_ort_version(void)
 		return "unknown";
 	}
 	typedef const OrtApiBase *(*OrtGetApiBaseFn)(void);
-	OrtGetApiBaseFn get_base = (OrtGetApiBaseFn)dlsym(g_ort_dlhandle, "OrtGetApiBase");
+	OrtGetApiBaseFn get_base = (OrtGetApiBaseFn)ort_dlsym(g_ort_dlhandle, "OrtGetApiBase");
 	if (!get_base) {
 		return "unknown";
 	}

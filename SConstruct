@@ -1,13 +1,13 @@
 #!/usr/bin/env python
-"""Build OnnxLoader GDExtension (.so) — scons-only.
+"""Build OnnxLoader GDExtension — scons-only.
 
   git submodule update --init --recursive
-  nix develop   # sets ORT_ROOT
-  scons platform=linux target=template_debug
-  scons smoke-csv
+  # Linux: nix develop or bash tools/fetch_ms_ort.sh
+  scons platform=linux|windows|macos target=template_debug
+  scons smoke-csv   # host CSV smoke (Unix)
 
-Our C/C++ sources: -Wall -Wextra -Werror.
-godot-cpp submodule: custom.py (-Wno-unused-parameter); addon C++ also -Wno-unused-parameter for generated headers.
+Our C/C++ sources: -Wall -Wextra -Werror (GCC/Clang).
+godot-cpp submodule: custom.py (-Wno-unused-parameter).
 """
 import os
 import sys
@@ -28,13 +28,12 @@ def _find_ort_header(root):
 
 
 def _ensure_ort_root():
-    """Resolve ORT_ROOT: env/arg, else tools/ensure_ort.sh (fetch MS 1.20.1)."""
+    """Resolve ORT_ROOT: env/arg, else tools/ensure_ort.sh (fetch MS ORT)."""
     root = ARGUMENTS.get("ort_root", os.environ.get("ORT_ROOT", ""))
     if root and os.path.isdir(root) and os.path.isfile(
         os.path.join(root, "include", "onnxruntime_c_api.h")
     ):
         return root
-    # Header may live under include/onnxruntime/ on some prefixes.
     if root and os.path.isdir(root):
         for sub in ("include", os.path.join("include", "onnxruntime")):
             if os.path.isfile(os.path.join(root, sub, "onnxruntime_c_api.h")):
@@ -43,8 +42,7 @@ def _ensure_ort_root():
     if not os.path.isfile(ensure):
         print(
             "ORT_ROOT unset and tools/ensure_ort.sh missing.\n"
-            "  nix develop   # sets ORT_ROOT\n"
-            "  bash tools/fetch_ms_ort.sh && export ORT_ROOT=/tmp/onnxruntime-linux-x64-1.20.1",
+            "  bash tools/fetch_ms_ort.sh && export ORT_ROOT=...",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -71,7 +69,6 @@ if not godot_cpp.exists() or not os.listdir(str(godot_cpp.srcnode())):
 
 env = SConscript("godot-cpp/SConstruct")
 
-# Forward ORT/Godot shell env into SCons Command actions (default ENV is minimal).
 for _key in (
     "ONNX_ORT_BIN",
     "ORT_ROOT",
@@ -82,6 +79,7 @@ for _key in (
     "C_INCLUDE_PATH",
     "GODOT_BIN",
     "ONNX_LOADER_SKIP_SESSION_RELEASE",
+    "PATH",
 ):
     if _key in os.environ and os.environ[_key]:
         env["ENV"][_key] = os.environ[_key]
@@ -91,6 +89,11 @@ if not os.path.isfile(os.path.join(ort_inc, "onnxruntime_c_api.h")):
     print(f"ERROR: onnxruntime_c_api.h not found under ORT_ROOT={ORT_ROOT}", file=sys.stderr)
     sys.exit(1)
 
+platform = env["platform"]
+is_windows = platform == "windows"
+is_macos = platform == "macos"
+is_linux = platform == "linux"
+
 addon_src = "addons/onnx_loader/src"
 runtime_c = [f"{addon_src}/onnx_runtime.c"]
 godot_sources = [
@@ -98,46 +101,54 @@ godot_sources = [
     f"{addon_src}/register_types.cpp",
 ]
 
-# GDExtension: dlopen bundled ORT at runtime — do NOT link libonnxruntime into the
-# .so (NEEDED + dlopen = two ORT instances → ReleaseSession heap crash under Godot).
 ort_inc_flags = {
     "CPPDEFINES": {"ONNX_LOADER_WITH_ORT": 1},
     "CPPPATH": [addon_src, ort_inc],
 }
 
-smoke_link_flags = {
-    "LIBPATH": [ort_lib],
-    "LINKFLAGS": [
-        "-Wl,--disable-new-dtags,-rpath,$ORIGIN",
-        "-Wl,-z,noexecstack",
-    ],
-}
-
-# C only — no godot headers; strict warnings.
 env_c = env.Clone()
-env_c.Append(
-    CCFLAGS=["-std=c11", "-Wall", "-Wextra", "-Werror", "-fPIC"],
-    **ort_inc_flags,
-)
-
-# C++ GDExtension bindings — Werror on our code; suppress godot-cpp header noise.
 env_cpp = env.Clone()
-env_cpp.Append(
-    CXXFLAGS=["-Wall", "-Wextra", "-Werror", "-Wno-unused-parameter", "-Wno-unused-variable", "-fno-gnu-unique"],
-    **ort_inc_flags,
-    LINKFLAGS=["-Wl,-z,noexecstack"],
-)
-# Portable Linux .so — same pattern as godot_openxr_vendors / webrtc-native.
-if env_cpp["platform"] == "linux":
-    env_cpp.Append(LINKFLAGS=["-static-libgcc", "-static-libstdc++"])
+env_c.Append(**ort_inc_flags)
+env_cpp.Append(**ort_inc_flags)
+
+if is_windows:
+    # MSVC / clang-cl: keep warnings reasonable; godot-cpp sets /std.
+    env_c.Append(CFLAGS=["/W3"])
+    env_cpp.Append(CXXFLAGS=["/W3"])
+else:
+    env_c.Append(
+        CCFLAGS=[
+            "-std=c11",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-Wno-unused-but-set-parameter",
+            "-fPIC",
+        ],
+    )
+    env_cpp.Append(
+        CXXFLAGS=[
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-Wno-unused-parameter",
+            "-Wno-unused-variable",
+            "-Wno-unused-but-set-parameter",
+            "-fno-gnu-unique",
+        ],
+    )
+    if is_linux:
+        env_cpp.Append(LINKFLAGS=["-Wl,-z,noexecstack", "-static-libgcc", "-static-libstdc++"])
 
 runtime_lib = env_c.StaticLibrary("build/libonnx_runtime", runtime_c)
 
-# Append addon libs; do not pass LIBS= to SharedLibrary (that drops libgodot-cpp).
-env_cpp.Append(LIBS=[runtime_lib, "m", "dl"])
+if is_windows:
+    env_cpp.Append(LIBS=[runtime_lib])
+else:
+    env_cpp.Append(LIBS=[runtime_lib, "m", "dl"])
 
 libname = "onnx_loader"
-if env_cpp["platform"] == "macos":
+if is_macos:
     library = env_cpp.SharedLibrary(
         "addons/onnx_loader/bin/lib{}.{}.{}.framework/lib{}.{}.{}".format(
             libname,
@@ -157,22 +168,6 @@ else:
         source=godot_sources,
     )
 
-smoke_csv = env_c.Program(
-    "build/smoke_csv",
-    "tools/smoke_csv.c",
-    LIBS=[runtime_lib, "stdc++", "m", "dl"],
-    **smoke_link_flags,
-)
-
-smoke_dlopen = env_c.Program(
-    "build/smoke_dlopen_ort",
-    "tools/smoke_dlopen_ort.c",
-    LIBS=["stdc++", "dl"],
-    **smoke_link_flags,
-)
-
-_wrap = "bash tools/with_bundled_ort.sh"
-
 
 def _bundle_ort_libs(target, source, env):
     import shutil
@@ -187,7 +182,19 @@ def _bundle_ort_libs(target, source, env):
 
     dest_dir = Dir("addons/onnx_loader/bin").abspath
     os.makedirs(dest_dir, exist_ok=True)
-    for name in ("libonnxruntime.so.1", "libonnxruntime.so"):
+
+    if is_windows:
+        names = ("onnxruntime.dll",)
+    elif is_macos:
+        names = (
+            "libonnxruntime.1.20.1.dylib",
+            "libonnxruntime.dylib",
+        )
+    else:
+        names = ("libonnxruntime.so.1", "libonnxruntime.so")
+
+    copied = []
+    for name in names:
         src = os.path.join(ort_lib, name)
         if not os.path.isfile(src):
             continue
@@ -196,29 +203,36 @@ def _bundle_ort_libs(target, source, env):
         shutil.copy2(src, tmp)
         os.chmod(
             tmp,
-            stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH,
+            stat.S_IRUSR
+            | stat.S_IWUSR
+            | stat.S_IXUSR
+            | stat.S_IRGRP
+            | stat.S_IXGRP
+            | stat.S_IROTH
+            | stat.S_IXOTH,
         )
         os.replace(tmp, dest)
-    so1 = os.path.join(dest_dir, "libonnxruntime.so.1")
-    if not os.path.isfile(so1):
-        raise RuntimeError(
-            f"ORT_BUNDLE=1 but {so1} missing after copy (ORT_ROOT={os.environ.get('ORT_ROOT', '')})"
-        )
-    # glibc 2.41+ rejects RWE GNU_STACK on dlopen (MS ORT / vendor builds).
-    import subprocess
+        copied.append(dest)
 
-    subprocess.check_call(["python3", "tools/clear_ort_execstack.py", so1])
-    # On NixOS, also patchelf + copy libstdc++ beside ORT so Godot 4.6 can
-    # dlopen without a special launcher (Julian/Alex: must "just work").
-    on_nix = os.path.isdir("/nix/store") or bool(os.environ.get("NIX_CXX_LIB"))
-    if on_nix:
-        patch_env = os.environ.copy()
-        patch_env["REQUIRE_NIX_PATCH"] = "1"
-        subprocess.check_call(
-            ["bash", "tools/patch_bundled_ort_rpath.sh"],
-            env=patch_env,
+    if not copied:
+        raise RuntimeError(
+            f"ORT_BUNDLE=1 but no ORT shared lib copied from {ort_lib} (names={names})"
         )
-        subprocess.check_call(["python3", "tools/clear_ort_execstack.py", "--check", so1])
+
+    if is_linux:
+        import subprocess
+
+        so1 = os.path.join(dest_dir, "libonnxruntime.so.1")
+        subprocess.check_call(["python3", "tools/clear_ort_execstack.py", so1])
+        on_nix = os.path.isdir("/nix/store") or bool(os.environ.get("NIX_CXX_LIB"))
+        if on_nix:
+            patch_env = os.environ.copy()
+            patch_env["REQUIRE_NIX_PATCH"] = "1"
+            subprocess.check_call(
+                ["bash", "tools/patch_bundled_ort_rpath.sh"],
+                env=patch_env,
+            )
+            subprocess.check_call(["python3", "tools/clear_ort_execstack.py", "--check", so1])
     return None
 
 
@@ -228,27 +242,53 @@ bundle_ort = env.Command(
     _bundle_ort_libs,
 )
 
-csv_path = "fixtures/ci-smoke/demo_inputs.csv"
-model_onnx = "fixtures/ci-smoke/model.onnx"
-smoke_csv_run = env_c.Command(
-    "build/smoke_csv.stamp",
-    [smoke_csv, bundle_ort, csv_path],
-    f"{_wrap} ./build/smoke_csv fixtures/ci-smoke/model.json "
-    "fixtures/ci-smoke/model.onnx "
-    f"{csv_path} | tee /tmp/onnx-loader-smoke-csv.txt && "
-    "grep -q ONNX_LOADER_CSV_SMOKE_OK /tmp/onnx-loader-smoke-csv.txt",
-)
+# Host smokes are Unix (dlopen + bash wrappers).
+if not is_windows:
+    smoke_link_flags = {
+        "LIBPATH": [ort_lib],
+        "LINKFLAGS": [
+            "-Wl,-rpath,$ORIGIN",
+        ],
+    }
+    if is_linux:
+        smoke_link_flags["LINKFLAGS"] = [
+            "-Wl,--disable-new-dtags,-rpath,$ORIGIN",
+            "-Wl,-z,noexecstack",
+        ]
 
-smoke_dlopen_run = env_c.Command(
-    "build/smoke_dlopen_ort.stamp",
-    [smoke_dlopen, bundle_ort, model_onnx],
-    f"{_wrap} ./build/smoke_dlopen_ort "
-    f'"{os.environ.get("ONNX_ORT_BIN", "addons/onnx_loader/bin")}" '
-    "fixtures/ci-smoke/model.onnx | tee /tmp/onnx-loader-smoke-dlopen.txt && "
-    "grep -q ONNX_DLOPEN_TEARDOWN_OK /tmp/onnx-loader-smoke-dlopen.txt",
-)
+    smoke_csv = env_c.Program(
+        "build/smoke_csv",
+        "tools/smoke_csv.c",
+        LIBS=[runtime_lib, "stdc++", "m", "dl"],
+        **smoke_link_flags,
+    )
+    smoke_dlopen = env_c.Program(
+        "build/smoke_dlopen_ort",
+        "tools/smoke_dlopen_ort.c",
+        LIBS=["stdc++", "dl"],
+        **smoke_link_flags,
+    )
+    _wrap = "bash tools/with_bundled_ort.sh"
+    csv_path = "fixtures/ci-smoke/demo_inputs.csv"
+    model_onnx = "fixtures/ci-smoke/model.onnx"
+    smoke_csv_run = env_c.Command(
+        "build/smoke_csv.stamp",
+        [smoke_csv, bundle_ort, csv_path],
+        f"{_wrap} ./build/smoke_csv fixtures/ci-smoke/model.json "
+        "fixtures/ci-smoke/model.onnx "
+        f"{csv_path} | tee /tmp/onnx-loader-smoke-csv.txt && "
+        "grep -q ONNX_LOADER_CSV_SMOKE_OK /tmp/onnx-loader-smoke-csv.txt",
+    )
+    smoke_dlopen_run = env_c.Command(
+        "build/smoke_dlopen_ort.stamp",
+        [smoke_dlopen, bundle_ort, model_onnx],
+        f"{_wrap} ./build/smoke_dlopen_ort "
+        f'"{os.environ.get("ONNX_ORT_BIN", "addons/onnx_loader/bin")}" '
+        "fixtures/ci-smoke/model.onnx | tee /tmp/onnx-loader-smoke-dlopen.txt && "
+        "grep -q ONNX_DLOPEN_TEARDOWN_OK /tmp/onnx-loader-smoke-dlopen.txt",
+    )
+    Alias("smoke-csv", smoke_csv_run)
+    Alias("smoke-dlopen-ort", smoke_dlopen_run)
 
-Alias("smoke-csv", smoke_csv_run)
-Alias("smoke-dlopen-ort", smoke_dlopen_run)
 Alias("bundle-ort", bundle_ort)
 Default(library, bundle_ort)

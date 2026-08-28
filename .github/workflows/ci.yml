@@ -71,15 +71,18 @@ jobs:
           python3 tools/clear_ort_execstack.py --check addons/onnx_loader/bin/libonnxruntime.so.1
           chmod +x tools/ci_julian_regressions.sh
           bash tools/ci_julian_regressions.sh
-          chmod +x tools/package_linux_portable.sh
-          SKIP_SCONS=1 ORT_ROOT="$ORT_ROOT" bash tools/package_linux_portable.sh
-          test -f /tmp/godot-onnx-loader-linux-x64-portable.zip
+          scons -j"$(nproc)" platform=linux target=template_release
+          chmod +x tools/package_assetlib.sh
+          SKIP_SCONS=1 ORT_ROOT="$ORT_ROOT" PKG_VER="ci" \
+            ZIP=/tmp/godot-onnx-loader-ci-linux-x86_64.zip \
+            bash tools/package_assetlib.sh
+          test -f /tmp/godot-onnx-loader-ci-linux-x86_64.zip
 
-      - name: Upload portable Linux package
+      - name: Upload Asset Library Linux zip
         uses: actions/upload-artifact@v7
         with:
-          name: godot-onnx-loader-linux-x64-portable
-          path: /tmp/godot-onnx-loader-linux-x64-portable.zip
+          name: godot-onnx-loader-linux-x86_64-assetlib
+          path: /tmp/godot-onnx-loader-ci-linux-x86_64.zip
           if-no-files-found: error
           retention-days: 30
 
@@ -134,3 +137,101 @@ jobs:
           bash tools/godot_46_ms_ort.sh
           python3 tools/clear_ort_execstack.py --check \
             addons/onnx_loader/bin/libonnxruntime.so.1
+
+  windows-build:
+    runs-on: windows-latest
+    env:
+      ORT_VER: "1.20.1"
+      ORT_PLATFORM: win-x64
+      ORT_ROOT: ${{ github.workspace }}/.ort/onnxruntime-win-x64-1.20.1
+      ORT_BUNDLE: "1"
+      SCONS_CACHE: ${{ github.workspace }}/.scons-cache
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install scons
+        run: pip install scons
+
+      - name: Fetch MS ORT (win-x64)
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x tools/fetch_ms_ort.sh
+          bash tools/fetch_ms_ort.sh
+          test -f "${ORT_ROOT}/lib/onnxruntime.dll"
+          test -f "${ORT_ROOT}/include/onnxruntime_c_api.h"
+
+      - name: scons Windows template_debug
+        shell: bash
+        run: |
+          set -euo pipefail
+          export ORT_ROOT ORT_BUNDLE
+          scons -j"$(nproc)" platform=windows target=template_debug
+          test -f addons/onnx_loader/bin/libonnx_loader.windows.template_debug.x86_64.dll
+          test -f addons/onnx_loader/bin/onnxruntime.dll
+
+      - name: Upload Windows addon bin
+        uses: actions/upload-artifact@v7
+        with:
+          name: godot-onnx-loader-windows-x86_64-bin
+          path: |
+            addons/onnx_loader/bin/libonnx_loader.windows.template_debug.x86_64.dll
+            addons/onnx_loader/bin/onnxruntime.dll
+            addons/onnx_loader/onnx_loader.gdextension
+          if-no-files-found: error
+          retention-days: 14
+
+  macos-build:
+    runs-on: macos-latest
+    env:
+      ORT_VER: "1.20.1"
+      ORT_PLATFORM: osx-arm64
+      ORT_ROOT: /tmp/onnxruntime-osx-arm64-1.20.1
+      ORT_BUNDLE: "1"
+      SCONS_CACHE: ${{ github.workspace }}/.scons-cache
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install scons
+        run: pip install scons
+
+      - name: Fetch MS ORT (osx-arm64)
+        run: |
+          set -euo pipefail
+          chmod +x tools/fetch_ms_ort.sh
+          bash tools/fetch_ms_ort.sh
+          test -f "${ORT_ROOT}/include/onnxruntime_c_api.h"
+          test -f "${ORT_ROOT}/lib/libonnxruntime.dylib" \
+            -o -f "${ORT_ROOT}/lib/libonnxruntime.1.20.1.dylib"
+
+      - name: scons macOS template_debug
+        run: |
+          set -euo pipefail
+          export ORT_ROOT ORT_BUNDLE
+          scons -j"$(sysctl -n hw.ncpu)" platform=macos target=template_debug
+          test -d addons/onnx_loader/bin/libonnx_loader.macos.template_debug.framework
+          test -f addons/onnx_loader/bin/libonnxruntime.dylib \
+            -o -f addons/onnx_loader/bin/libonnxruntime.1.20.1.dylib
+
+      - name: Upload macOS addon bin
+        uses: actions/upload-artifact@v7
+        with:
+          name: godot-onnx-loader-macos-arm64-bin
+          path: |
+            addons/onnx_loader/bin/libonnx_loader.macos.template_debug.framework
+            addons/onnx_loader/bin/libonnxruntime*.dylib
+            addons/onnx_loader/onnx_loader.gdextension
+          if-no-files-found: error
+          retention-days: 14

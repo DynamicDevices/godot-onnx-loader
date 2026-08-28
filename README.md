@@ -27,12 +27,28 @@ Fork/refreshed from [mat490/Godot-ONNX-AI-Models-Loaders](https://github.com/mat
 | `predict_array(Array)` | mat490-compatible `Array` wrapper |
 | `get_input_size()` / `get_output_size()` | Flat element counts (batch=1) |
 
-## Quick start
+## Install (Godot project)
+
+**Easiest (Linux x86_64):** download the Asset Library zip from the
+[latest release](https://github.com/DynamicDevices/godot-onnx-loader/releases/latest)
+(`godot-onnx-loader-*-linux-x86_64.zip`), unzip, and copy `addons/onnx_loader/`
+into your project. Restart the editor / enable the GDExtension if prompted.
+
+When listed on the [Godot Asset Library](https://godotengine.org/asset-library/asset),
+you can also install from the editor: **AssetLib** → search **onnx-loader**.
+
+This package is **Linux x86_64** in the Asset Library zip today (debug + release
+templates) and bundles Microsoft ONNX Runtime 1.20.1. **Windows** and **macOS**
+GDExtension builds are covered in CI (GitHub-hosted `windows-latest` /
+`macos-latest`); multi-platform release zips are next. NixOS: prefer building
+from source (`tools/godot_46_ms_ort.sh`) rather than the glibc release zip.
+
+## Quick start (build from source)
 
 ```bash
 git clone --recurse-submodules https://github.com/DynamicDevices/godot-onnx-loader.git
 cd godot-onnx-loader
-# Optional: nix develop   # pins tools via flake.lock (Godot 4.5 path)
+# Optional: nix develop   # pins tools via flake.lock
 scons platform=linux target=template_debug
 scons smoke-csv                 # host CSV smoke (no Godot)
 bash tools/godot_csv_smoke.sh   # Godot headless (set GODOT_BIN if needed)
@@ -49,7 +65,7 @@ addon:
 - What ONNX Runtime is:
   [ONNX Runtime overview](https://onnxruntime.ai/)
 
-Open `demo/` in Godot 4.5+ → run `csv_smoke.tscn` → expect `GODOT_ONNX_CSV_SMOKE_OK`.
+Open `demo/` in Godot 4.6+ → run `csv_smoke.tscn` → expect `GODOT_ONNX_CSV_SMOKE_OK`.
 (`demo/.godot/` is local editor cache; do not commit it.)
 
 ### Godot 4.6 on NixOS (should just work after build)
@@ -74,19 +90,25 @@ nix shell github:nixos/nixpkgs/nixos-26.05#godot_4_6 -c godot4 --path demo
 
 One-shot build + headless check (CI uses this): `bash tools/godot_46_ms_ort.sh`.
 
-### Portable zip
+### Asset Library / project zip
 
 ```bash
-bash tools/package_linux_portable.sh
-# → /tmp/godot-onnx-loader-linux-x64-portable.zip
+bash tools/package_assetlib.sh
+# → /tmp/godot-onnx-loader-<ver>-linux-x86_64.zip
+# unzip and copy addons/onnx_loader into your Godot project
 ```
+
+Tagged releases upload that zip automatically (see `.github/workflows/release.yml`).
+Legacy debug-only: `bash tools/package_linux_portable.sh`.
 
 ## Layout
 
 ```text
 addons/onnx_loader/          # ship this folder into a Godot project
   onnx_loader.gdextension
-  bin/                       # Godot loader .so + libonnxruntime.so.1
+  README.md
+  LICENSE
+  bin/                       # loader .so (debug+release) + libonnxruntime.so.1
 demo/                        # tiny test project
 godot-cpp/                   # C++ bindings (git submodule)
 ```
@@ -156,4 +178,13 @@ downloaded-`.so` problems, at the cost of build time.
 
 ## License
 
-MIT (loader code). ONNX fixtures are smoke-test artefacts from vizemes-align training.
+MIT — see [LICENSE](LICENSE). ONNX fixtures are smoke-test artefacts from
+vizemes-align training. Bundled `libonnxruntime` is Microsoft ONNX Runtime
+(separate license; see [onnxruntime.ai](https://onnxruntime.ai/)).
+
+## Asset Library submit (maintainers)
+
+1. Tag `vX.Y.Z` → `release.yml` attaches `godot-onnx-loader-vX.Y.Z-linux-x86_64.zip`.
+2. On [Asset Library submit](https://godotengine.org/asset-library/asset/submit):
+   Download provider **Custom**, Download URL = direct GitHub Release asset link,
+   Minimum Godot version **4.6**, note Linux x86_64 only.

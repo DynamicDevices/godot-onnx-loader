@@ -1,14 +1,18 @@
 [configuration]
 entry_symbol = "onnx_loader_library_init"
-compatibility_minimum = "4.5"
+compatibility_minimum = "4.6"
 
 ; Relative paths so the addon relocates under any project's addons/.
 ; Third-party ORT is declared under [dependencies] for Godot export packing.
-; The GDExtension still dlopens ORT at runtime (single instance; not linked NEEDED).
+; The GDExtension still dlopens / LoadLibrary ORT at runtime (not linked NEEDED).
 
 [libraries]
 linux.debug.x86_64 = "./bin/libonnx_loader.linux.template_debug.x86_64.so"
 linux.release.x86_64 = "./bin/libonnx_loader.linux.template_release.x86_64.so"
+windows.debug.x86_64 = "./bin/libonnx_loader.windows.template_debug.x86_64.dll"
+windows.release.x86_64 = "./bin/libonnx_loader.windows.template_release.x86_64.dll"
+macos.debug = "./bin/libonnx_loader.macos.template_debug.framework"
+macos.release = "./bin/libonnx_loader.macos.template_release.framework"
 
 [dependencies]
 linux.debug = {
@@ -16,4 +20,16 @@ linux.debug = {
 }
 linux.release = {
     "./bin/libonnxruntime.so.1": ""
+}
+windows.debug = {
+    "./bin/onnxruntime.dll": ""
+}
+windows.release = {
+    "./bin/onnxruntime.dll": ""
+}
+macos.debug = {
+    "./bin/libonnxruntime.dylib": ""
+}
+macos.release = {
+    "./bin/libonnxruntime.dylib": ""
 }
