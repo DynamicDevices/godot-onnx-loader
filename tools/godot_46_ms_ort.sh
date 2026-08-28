@@ -38,6 +38,7 @@ if [[ ! -f "$ORT_SO" ]]; then
 fi
 # Clear execstack even on non-Nix hosts (glibc 2.41+).
 python3 "$ROOT/tools/clear_ort_execstack.py" "$ORT_SO"
+python3 "$ROOT/tools/clear_ort_execstack.py" --check "$ORT_SO"
 
 _run_godot_smoke() {
 	local godot="$1"
