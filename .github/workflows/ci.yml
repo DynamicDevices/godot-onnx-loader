@@ -5,6 +5,10 @@ on:
     branches: [main, master]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   ORT_VER: "1.20.1"
   ORT_ROOT: /tmp/onnxruntime-linux-x64-1.20.1
@@ -18,23 +22,30 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
+          fetch-depth: 1
 
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: |
-            requirements.txt
 
-      - name: Restore scons + ORT cache
-        uses: actions/cache@v5
+      - name: Restore scons cache
+        uses: actions/cache/restore@v5
         with:
-          path: |
-            .scons-cache
-            /tmp/onnxruntime-linux-x64-1.20.1
-          key: onnx-loader-${{ runner.os }}-${{ hashFiles('godot-cpp/**', 'SConstruct', 'addons/**', 'custom.py') }}
+          path: .scons-cache
+          key: scons-linux-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'godot-cpp/tools/**', 'SConstruct', 'custom.py', 'addons/onnx_loader/src/**') }}-${{ github.sha }}
           restore-keys: |
-            onnx-loader-${{ runner.os }}-
+            scons-linux-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'godot-cpp/tools/**', 'SConstruct', 'custom.py', 'addons/onnx_loader/src/**') }}-
+            scons-linux-
+
+      - name: Restore ORT cache
+        id: ort-cache-linux
+        uses: actions/cache/restore@v5
+        with:
+          path: /tmp/onnxruntime-linux-x64-1.20.1
+          key: ort-linux-x64-${{ env.ORT_VER }}
+          restore-keys: |
+            ort-linux-x64-
 
       - name: install scons
         run: pip install scons
@@ -52,6 +63,7 @@ jobs:
       - name: scons build + smokes + portable zip
         run: |
           set -euo pipefail
+          mkdir -p "$SCONS_CACHE"
           test -f fixtures/ci-smoke/model.onnx
           test -f fixtures/ci-smoke/demo_inputs.csv
           export LIBRARY_PATH="${ORT_LIB}${LIBRARY_PATH:+:$LIBRARY_PATH}"
@@ -86,6 +98,20 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Save scons cache
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: .scons-cache
+          key: scons-linux-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'godot-cpp/tools/**', 'SConstruct', 'custom.py', 'addons/onnx_loader/src/**') }}-${{ github.sha }}
+
+      - name: Save ORT cache
+        if: always() && steps.ort-cache-linux.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: /tmp/onnxruntime-linux-x64-1.20.1
+          key: ort-linux-x64-${{ env.ORT_VER }}
+
   nixos-godot-smoke:
     runs-on: [self-hosted, Linux, nixos, esl-nixos]
     env:
@@ -95,6 +121,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
+          fetch-depth: 1
 
       - name: Nix Godot csv_smoke (Julian path)
         run: |
@@ -124,6 +151,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
+          fetch-depth: 1
 
       - name: Godot 4.6 MS ORT smoke (Julian Nix path)
         run: |
@@ -151,10 +179,30 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
+          fetch-depth: 1
 
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+          cache: pip
+
+      - name: Restore scons cache
+        uses: actions/cache/restore@v5
+        with:
+          path: .scons-cache
+          key: scons-windows-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'godot-cpp/tools/**', 'SConstruct', 'custom.py', 'addons/onnx_loader/src/**') }}-${{ github.sha }}
+          restore-keys: |
+            scons-windows-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'godot-cpp/tools/**', 'SConstruct', 'custom.py', 'addons/onnx_loader/src/**') }}-
+            scons-windows-
+
+      - name: Restore ORT cache
+        id: ort-cache-win
+        uses: actions/cache/restore@v5
+        with:
+          path: .ort
+          key: ort-win-x64-${{ env.ORT_VER }}
+          restore-keys: |
+            ort-win-x64-
 
       - name: Install scons
         run: pip install scons
@@ -177,7 +225,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          export ORT_ROOT ORT_BUNDLE
+          mkdir -p "$SCONS_CACHE"
+          export ORT_ROOT ORT_BUNDLE SCONS_CACHE
           which cl
           scons -j"$(nproc)" platform=windows target=template_debug
           test -f addons/onnx_loader/bin/libonnx_loader.windows.template_debug.x86_64.dll
@@ -194,22 +243,56 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Save scons cache
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: .scons-cache
+          key: scons-windows-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'godot-cpp/tools/**', 'SConstruct', 'custom.py', 'addons/onnx_loader/src/**') }}-${{ github.sha }}
+
+      - name: Save ORT cache
+        if: always() && steps.ort-cache-win.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: .ort
+          key: ort-win-x64-${{ env.ORT_VER }}
+
   macos-build:
     runs-on: macos-latest
     env:
       ORT_VER: "1.20.1"
       ORT_PLATFORM: osx-arm64
-      ORT_ROOT: /tmp/onnxruntime-osx-arm64-1.20.1
+      ORT_ROOT: ${{ github.workspace }}/.ort/onnxruntime-osx-arm64-1.20.1
       ORT_BUNDLE: "1"
       SCONS_CACHE: ${{ github.workspace }}/.scons-cache
     steps:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
+          fetch-depth: 1
 
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+          cache: pip
+
+      - name: Restore scons cache
+        uses: actions/cache/restore@v5
+        with:
+          path: .scons-cache
+          key: scons-macos-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'godot-cpp/tools/**', 'SConstruct', 'custom.py', 'addons/onnx_loader/src/**') }}-${{ github.sha }}
+          restore-keys: |
+            scons-macos-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'godot-cpp/tools/**', 'SConstruct', 'custom.py', 'addons/onnx_loader/src/**') }}-
+            scons-macos-
+
+      - name: Restore ORT cache
+        id: ort-cache-mac
+        uses: actions/cache/restore@v5
+        with:
+          path: .ort
+          key: ort-osx-arm64-${{ env.ORT_VER }}
+          restore-keys: |
+            ort-osx-arm64-
 
       - name: Install scons
         run: pip install scons
@@ -226,7 +309,8 @@ jobs:
       - name: scons macOS template_debug
         run: |
           set -euo pipefail
-          export ORT_ROOT ORT_BUNDLE
+          mkdir -p "$SCONS_CACHE"
+          export ORT_ROOT ORT_BUNDLE SCONS_CACHE
           scons -j"$(sysctl -n hw.ncpu)" platform=macos target=template_debug
           test -d addons/onnx_loader/bin/libonnx_loader.macos.template_debug.framework
           test -f addons/onnx_loader/bin/libonnxruntime.dylib \
@@ -242,3 +326,17 @@ jobs:
             addons/onnx_loader/onnx_loader.gdextension
           if-no-files-found: error
           retention-days: 14
+
+      - name: Save scons cache
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: .scons-cache
+          key: scons-macos-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'godot-cpp/tools/**', 'SConstruct', 'custom.py', 'addons/onnx_loader/src/**') }}-${{ github.sha }}
+
+      - name: Save ORT cache
+        if: always() && steps.ort-cache-mac.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: .ort
+          key: ort-osx-arm64-${{ env.ORT_VER }}

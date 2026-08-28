@@ -25,10 +25,16 @@ rm -f addons/onnx_loader/bin/.ort-bundled.stamp
 rm -f addons/onnx_loader/bin/libstdc++.so.6 addons/onnx_loader/bin/libgcc_s.so.1
 
 _scons() {
-	if command -v scons >/dev/null 2>&1; then
+	# On NixOS the host may have scons but not patchelf; SConstruct's Nix
+	# bundle step needs both (REQUIRE_NIX_PATCH). Always use nix shell there.
+	if [[ -d /nix/store ]] && command -v nix >/dev/null 2>&1; then
+		nix shell "${NIXPKGS}#scons" "${NIXPKGS}#gcc" "${NIXPKGS}#patchelf" \
+			--command scons "$@"
+	elif command -v scons >/dev/null 2>&1; then
 		scons "$@"
 	else
-		nix shell "${NIXPKGS}#scons" "${NIXPKGS}#gcc" --command scons "$@"
+		nix shell "${NIXPKGS}#scons" "${NIXPKGS}#gcc" "${NIXPKGS}#patchelf" \
+			--command scons "$@"
 	fi
 }
 
