@@ -34,6 +34,7 @@ fi
 if [[ -z "${ONNX_ORT_BIN:-}" ]]; then
 	unset LD_LIBRARY_PATH
 fi
+bash "$ROOT/tools/ensure_demo_extension.sh"
 cd "$ROOT/demo"
 "$GODOT" --headless --path . --quit-after 1 res://csv_smoke.tscn 2>&1 | tee "$OUT"
 grep -q GODOT_ONNX_CSV_SMOKE_OK "$OUT"

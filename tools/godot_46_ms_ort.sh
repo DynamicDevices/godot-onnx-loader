@@ -41,6 +41,7 @@ _run_godot_smoke() {
 	local godot="$1"
 	unset ONNX_ORT_BIN
 	export ONNX_LOADER_SKIP_SESSION_RELEASE=1
+	bash "$ROOT/tools/ensure_demo_extension.sh"
 	cd "$ROOT/demo"
 	"$godot" --headless --path . --quit-after 1 res://csv_smoke.tscn 2>&1 | tee "$OUT"
 	grep -q GODOT_ONNX_CSV_SMOKE_OK "$OUT"
@@ -89,6 +90,7 @@ test -f $root_q/addons/onnx_loader/bin/libstdc++.so.6
 # Do not unset LD_LIBRARY_PATH — Godot 4.6 nix wrapper sets its own FHS env.
 unset ONNX_ORT_BIN
 export ONNX_LOADER_SKIP_SESSION_RELEASE=1
+bash $root_q/tools/ensure_demo_extension.sh
 G=\$(command -v godot4 || command -v godot || true)
 test -n \"\$G\" && test -x \"\$G\"
 cd $root_q/demo

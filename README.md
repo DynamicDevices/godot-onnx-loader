@@ -31,6 +31,8 @@ bash tools/godot_csv_smoke.sh   # Godot 4.5 headless, if GODOT_BIN is set
 ```
 
 Open `demo/` in Godot 4.5+ and run `csv_smoke.tscn` — expect `GODOT_ONNX_CSV_SMOKE_OK`.
+(`demo/.godot/` is local-only; the smoke scripts recreate `extension_list.cfg` so headless
+CI does not need it committed.)
 
 ### Godot 4.6 (one command)
 
