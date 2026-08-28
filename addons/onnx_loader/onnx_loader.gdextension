@@ -2,6 +2,18 @@
 entry_symbol = "onnx_loader_library_init"
 compatibility_minimum = "4.5"
 
+; Relative paths so the addon relocates under any project's addons/.
+; Third-party ORT is declared under [dependencies] for Godot export packing.
+; The GDExtension still dlopens ORT at runtime (single instance; not linked NEEDED).
+
 [libraries]
-linux.debug.x86_64 = "res://addons/onnx_loader/bin/libonnx_loader.linux.template_debug.x86_64.so"
-linux.release.x86_64 = "res://addons/onnx_loader/bin/libonnx_loader.linux.template_release.x86_64.so"
+linux.debug.x86_64 = "./bin/libonnx_loader.linux.template_debug.x86_64.so"
+linux.release.x86_64 = "./bin/libonnx_loader.linux.template_release.x86_64.so"
+
+[dependencies]
+linux.debug = {
+    "./bin/libonnxruntime.so.1": ""
+}
+linux.release = {
+    "./bin/libonnxruntime.so.1": ""
+}
