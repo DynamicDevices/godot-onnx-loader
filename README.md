@@ -52,7 +52,10 @@ cd godot-onnx-loader
 # Optional: nix develop   # pins tools via flake.lock
 scons platform=linux target=template_debug
 scons smoke-csv                 # host CSV smoke (no Godot)
-bash tools/godot_csv_smoke.sh   # Godot headless (set GODOT_BIN if needed)
+# Godot headless needs **4.6+** (addon compatibility_minimum). Prefer:
+bash tools/godot_46_ms_ort.sh   # build + smoke (NixOS / MS ORT)
+# or, with a 4.6 binary already built:
+bash tools/godot_csv_smoke.sh   # skips nix Godot 4.5; set GODOT_BIN to 4.6+
 ```
 
 If `ORT_ROOT` is unset, `scons` downloads **Microsoft ONNX Runtime 1.20.1**
@@ -163,7 +166,7 @@ should be incremental.
 | Your machine | Goal | Command |
 |--------------|------|---------|
 | Ubuntu / Fedora / similar | Day-to-day | Quick start above |
-| NixOS | Godot **4.5** | `nix develop`, then `scons` + `bash tools/godot_csv_smoke.sh` |
+| NixOS | Godot **4.5** | Host `scons smoke-csv` only — editor smoke needs 4.6 (`godot_csv_smoke.sh` refuses 4.5) |
 | NixOS | Godot **4.6** | Plain shell: `bash tools/godot_46_ms_ort.sh` |
 | Any | Missing `libonnxruntime.so.1` | Re-run `scons` with bundling, or set `ONNX_ORT_BIN` to the folder that contains the `.so` |
 
