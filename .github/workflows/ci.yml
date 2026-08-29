@@ -77,9 +77,9 @@ jobs:
           test -f addons/onnx_loader/bin/libonnxruntime.so.1
           ! ldd addons/onnx_loader/bin/libonnx_loader.linux.template_debug.x86_64.so | grep -q libonnxruntime
           ! ldd addons/onnx_loader/bin/libonnx_loader.linux.template_debug.x86_64.so | grep -q 'libstdc++'
-          grep -q 'ONNX_LOADER_CSV_SMOKE_OK' /tmp/onnx-loader-smoke-csv.txt
-          grep -q 'hit_rate=' /tmp/onnx-loader-smoke-csv.txt
-          grep -q 'ONNX_DLOPEN_TEARDOWN_OK' /tmp/onnx-loader-smoke-dlopen.txt
+          grep -q 'ONNX_LOADER_CSV_SMOKE_OK' build/smoke-out/smoke-csv.txt
+          grep -q 'hit_rate=' build/smoke-out/smoke-csv.txt
+          grep -q 'ONNX_DLOPEN_TEARDOWN_OK' build/smoke-out/smoke-dlopen.txt
           python3 tools/clear_ort_execstack.py --check addons/onnx_loader/bin/libonnxruntime.so.1
           chmod +x tools/ci_julian_regressions.sh
           bash tools/ci_julian_regressions.sh
@@ -256,6 +256,28 @@ jobs:
           scons -j"$(nproc)" platform=windows target=template_debug
           test -f addons/onnx_loader/bin/libonnx_loader.windows.template_debug.x86_64.dll
           test -f addons/onnx_loader/bin/onnxruntime.dll
+          scons -j"$(nproc)" platform=windows target=template_debug smoke-csv
+          grep -q ONNX_LOADER_CSV_SMOKE_OK build/smoke-out/smoke-csv.txt
+
+      - name: Godot 4.6 headless csv_smoke (Windows)
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x tools/fetch_godot_46.sh tools/godot_csv_smoke.sh tools/ensure_demo_extension.sh
+          # Git on Windows may materialize demo/addons/onnx_loader as a file symlink;
+          # ensure a real directory for Godot.
+          if [[ ! -d demo/addons/onnx_loader/bin ]]; then
+            rm -f demo/addons/onnx_loader
+            mkdir -p demo/addons
+            cp -a addons/onnx_loader demo/addons/
+          fi
+          export GODOT_FORCE_WIN=1
+          GODOT="$(bash tools/fetch_godot_46.sh)"
+          export GODOT_BIN="$GODOT"
+          export ORT_BUNDLE=1
+          unset ONNX_ORT_BIN
+          bash tools/godot_csv_smoke.sh
+          echo "WINDOWS_GODOT_CSV_SMOKE_OK"
 
       - name: Upload Windows addon bin
         uses: actions/upload-artifact@v7
@@ -340,6 +362,22 @@ jobs:
           test -d addons/onnx_loader/bin/libonnx_loader.macos.template_debug.framework
           test -f addons/onnx_loader/bin/libonnxruntime.dylib \
             -o -f addons/onnx_loader/bin/libonnxruntime.1.20.1.dylib
+          scons -j"$(sysctl -n hw.ncpu)" platform=macos target=template_debug smoke-csv
+          grep -q ONNX_LOADER_CSV_SMOKE_OK build/smoke-out/smoke-csv.txt
+
+      - name: Godot 4.6 headless csv_smoke (macOS)
+        run: |
+          set -euo pipefail
+          chmod +x tools/fetch_godot_46.sh tools/godot_csv_smoke.sh tools/ensure_demo_extension.sh
+          GODOT="$(bash tools/fetch_godot_46.sh)"
+          export GODOT_BIN="$GODOT"
+          export ORT_BUNDLE=1
+          unset ONNX_ORT_BIN
+          # macOS Gatekeeper may quarantine downloaded Godot in CI — clear if present.
+          xattr -dr com.apple.quarantine "$GODOT" 2>/dev/null || true
+          xattr -dr com.apple.quarantine "$(dirname "$(dirname "$(dirname "$GODOT")")")" 2>/dev/null || true
+          bash tools/godot_csv_smoke.sh
+          echo "MACOS_GODOT_CSV_SMOKE_OK"
 
       - name: Upload macOS addon bin
         uses: actions/upload-artifact@v7

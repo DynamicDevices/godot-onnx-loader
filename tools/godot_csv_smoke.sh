@@ -33,7 +33,22 @@ _pick_godot() {
 	candidates+=(
 		"${HOME}/Downloads/Godot_v4.6.1-stable_linux.x86_64"
 		"${HOME}/Downloads/Godot_v4.6-stable_linux.x86_64"
+		"${HOME}/Downloads/Godot_v4.6.1-stable_win64.exe"
+		"${HOME}/Downloads/Godot_v4.6.1-stable_macos.universal/Godot.app/Contents/MacOS/Godot"
 	)
+	# CI / tools/fetch_godot_46.sh cache
+	if [[ -x "$ROOT/tools/fetch_godot_46.sh" ]]; then
+		:
+	fi
+	if [[ -f "$ROOT/.godot-ci/Godot_v4.6.1-stable_win64.exe" ]]; then
+		candidates+=("$ROOT/.godot-ci/Godot_v4.6.1-stable_win64.exe")
+	fi
+	if [[ -x "$ROOT/.godot-ci/Godot.app/Contents/MacOS/Godot" ]]; then
+		candidates+=("$ROOT/.godot-ci/Godot.app/Contents/MacOS/Godot")
+	fi
+	if [[ -x "$ROOT/.godot-ci/Godot_v4.6.1-stable_linux.x86_64" ]]; then
+		candidates+=("$ROOT/.godot-ci/Godot_v4.6.1-stable_linux.x86_64")
+	fi
 	# Only after explicit 4.6 paths — PATH may be nix godot 4.5.
 	if command -v godot4 >/dev/null 2>&1; then
 		candidates+=("$(command -v godot4)")
