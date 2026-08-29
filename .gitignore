@@ -15,3 +15,4 @@ result
 *.uid
 .scons-cache/
 .scons-cache-*/
+*.os

@@ -94,7 +94,7 @@ is_windows = platform == "windows"
 is_macos = platform == "macos"
 is_linux = platform == "linux"
 
-addon_src = "addons/onnx_loader/src"
+addon_src = "src"  # ship unit is addons/onnx_loader (bin + .gdextension only)
 runtime_c = [f"{addon_src}/onnx_runtime.c"]
 godot_sources = [
     f"{addon_src}/OnnxLoader.cpp",

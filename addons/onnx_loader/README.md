@@ -16,3 +16,7 @@ are smaller. NixOS users: prefer building from the git repo
 (`tools/godot_46_ms_ort.sh`) if the glibc prebuild does not match your Godot.
 
 Source / issues: https://github.com/DynamicDevices/godot-onnx-loader
+
+## Layout
+
+This folder is the **ship unit** (`.gdextension` + `bin/` + deps). C/C++ sources live at repo-root `src/` and are not required by consumers.
