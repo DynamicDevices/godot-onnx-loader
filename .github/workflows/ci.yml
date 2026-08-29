@@ -33,9 +33,9 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: .scons-cache
-          key: scons-linux-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'godot-cpp/tools/**', 'SConstruct', 'custom.py', 'addons/onnx_loader/src/**') }}-${{ github.sha }}
+          key: scons-linux-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'godot-cpp/tools/**', 'SConstruct', 'custom.py', 'src/**') }}-${{ github.sha }}
           restore-keys: |
-            scons-linux-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'godot-cpp/tools/**', 'SConstruct', 'custom.py', 'addons/onnx_loader/src/**') }}-
+            scons-linux-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'godot-cpp/tools/**', 'SConstruct', 'custom.py', 'src/**') }}-
             scons-linux-
 
       - name: Restore ORT cache
@@ -103,7 +103,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: .scons-cache
-          key: scons-linux-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'godot-cpp/tools/**', 'SConstruct', 'custom.py', 'addons/onnx_loader/src/**') }}-${{ github.sha }}
+          key: scons-linux-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'godot-cpp/tools/**', 'SConstruct', 'custom.py', 'src/**') }}-${{ github.sha }}
 
       - name: Save ORT cache
         if: always() && steps.ort-cache-linux.outputs.cache-hit != 'true'
@@ -190,9 +190,9 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: .scons-cache
-          key: scons-windows-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'godot-cpp/tools/**', 'SConstruct', 'custom.py', 'addons/onnx_loader/src/**') }}-${{ github.sha }}
+          key: scons-windows-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'godot-cpp/tools/**', 'SConstruct', 'custom.py', 'src/**') }}-${{ github.sha }}
           restore-keys: |
-            scons-windows-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'godot-cpp/tools/**', 'SConstruct', 'custom.py', 'addons/onnx_loader/src/**') }}-
+            scons-windows-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'godot-cpp/tools/**', 'SConstruct', 'custom.py', 'src/**') }}-
             scons-windows-
 
       - name: Restore ORT cache
@@ -273,7 +273,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: .scons-cache
-          key: scons-windows-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'godot-cpp/tools/**', 'SConstruct', 'custom.py', 'addons/onnx_loader/src/**') }}-${{ github.sha }}
+          key: scons-windows-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'godot-cpp/tools/**', 'SConstruct', 'custom.py', 'src/**') }}-${{ github.sha }}
 
       - name: Save ORT cache
         if: always() && steps.ort-cache-win.outputs.cache-hit != 'true'
@@ -305,9 +305,9 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: .scons-cache
-          key: scons-macos-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'godot-cpp/tools/**', 'SConstruct', 'custom.py', 'addons/onnx_loader/src/**') }}-${{ github.sha }}
+          key: scons-macos-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'godot-cpp/tools/**', 'SConstruct', 'custom.py', 'src/**') }}-${{ github.sha }}
           restore-keys: |
-            scons-macos-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'godot-cpp/tools/**', 'SConstruct', 'custom.py', 'addons/onnx_loader/src/**') }}-
+            scons-macos-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'godot-cpp/tools/**', 'SConstruct', 'custom.py', 'src/**') }}-
             scons-macos-
 
       - name: Restore ORT cache
@@ -357,7 +357,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: .scons-cache
-          key: scons-macos-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'godot-cpp/tools/**', 'SConstruct', 'custom.py', 'addons/onnx_loader/src/**') }}-${{ github.sha }}
+          key: scons-macos-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'godot-cpp/tools/**', 'SConstruct', 'custom.py', 'src/**') }}-${{ github.sha }}
 
       - name: Save ORT cache
         if: always() && steps.ort-cache-mac.outputs.cache-hit != 'true'

@@ -27,7 +27,7 @@ jobs:
       - uses: actions/cache/restore@v5
         with:
           path: .scons-cache
-          key: rel-scons-linux-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'SConstruct', 'addons/onnx_loader/src/**') }}-${{ github.sha }}
+          key: rel-scons-linux-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'SConstruct', 'src/**') }}-${{ github.sha }}
           restore-keys: |
             rel-scons-linux-
       - run: pip install scons
@@ -54,7 +54,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: .scons-cache
-          key: rel-scons-linux-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'SConstruct', 'addons/onnx_loader/src/**') }}-${{ github.sha }}
+          key: rel-scons-linux-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'SConstruct', 'src/**') }}-${{ github.sha }}
 
   build-windows:
     runs-on: windows-latest
@@ -78,7 +78,7 @@ jobs:
           path: |
             .scons-cache
             .ort
-          key: rel-scons-win-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'SConstruct', 'addons/onnx_loader/src/**') }}-${{ github.sha }}
+          key: rel-scons-win-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'SConstruct', 'src/**') }}-${{ github.sha }}
           restore-keys: |
             rel-scons-win-
       - run: pip install scons
@@ -126,7 +126,7 @@ jobs:
           path: |
             .scons-cache
             .ort
-          key: rel-scons-win-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'SConstruct', 'addons/onnx_loader/src/**') }}-${{ github.sha }}
+          key: rel-scons-win-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'SConstruct', 'src/**') }}-${{ github.sha }}
 
   build-macos:
     runs-on: macos-latest
@@ -150,7 +150,7 @@ jobs:
           path: |
             .scons-cache
             .ort
-          key: rel-scons-mac-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'SConstruct', 'addons/onnx_loader/src/**') }}-${{ github.sha }}
+          key: rel-scons-mac-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'SConstruct', 'src/**') }}-${{ github.sha }}
           restore-keys: |
             rel-scons-mac-
       - run: pip install scons
@@ -179,7 +179,7 @@ jobs:
           path: |
             .scons-cache
             .ort
-          key: rel-scons-mac-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'SConstruct', 'addons/onnx_loader/src/**') }}-${{ github.sha }}
+          key: rel-scons-mac-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'SConstruct', 'src/**') }}-${{ github.sha }}
 
   assetlib-package:
     needs: [build-linux, build-windows, build-macos]
