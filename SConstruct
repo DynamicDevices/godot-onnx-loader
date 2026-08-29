@@ -267,8 +267,34 @@ _wrap = "bash tools/with_bundled_ort.sh"
 csv_path = "fixtures/ci-smoke/demo_inputs.csv"
 model_onnx = "fixtures/ci-smoke/model.onnx"
 
+# Host tools must not use godot-cpp's macos universal (-arch arm64 -arch x86_64):
+# MS ORT is single-arch and dual-arch link drops _main for one slice.
+env_smoke = env_c.Clone()
+if is_macos:
+    import platform as _pyplat
+
+    _host_arch = "arm64" if _pyplat.machine() == "arm64" else "x86_64"
+
+    def _drop_arch_flags(flags):
+        out = []
+        skip = False
+        for f in list(flags or []):
+            if skip:
+                skip = False
+                continue
+            if f == "-arch":
+                skip = True
+                continue
+            out.append(f)
+        return out
+
+    for _k in ("CCFLAGS", "CFLAGS", "CXXFLAGS", "LINKFLAGS", "ASFLAGS"):
+        if _k in env_smoke:
+            env_smoke[_k] = _drop_arch_flags(env_smoke[_k])
+    env_smoke.Append(CCFLAGS=["-arch", _host_arch], LINKFLAGS=["-arch", _host_arch])
+
 if is_windows:
-    smoke_csv = env_c.Program(
+    smoke_csv = env_smoke.Program(
         "build/smoke_csv",
         "tools/smoke_csv.c",
         LIBS=[runtime_lib],
@@ -285,7 +311,9 @@ else:
             "-Wl,--disable-new-dtags,-rpath,$ORIGIN",
             "-Wl,-z,noexecstack",
         ]
-    smoke_csv = env_c.Program(
+    elif is_macos:
+        smoke_link_flags["LINKFLAGS"] = ["-Wl,-rpath,@loader_path"]
+    smoke_csv = env_smoke.Program(
         "build/smoke_csv",
         "tools/smoke_csv.c",
         LIBS=[runtime_lib, "stdc++", "m", "dl"],
@@ -293,7 +321,7 @@ else:
     )
 
 smoke_csv_exe = str(smoke_csv[0]).replace("\\", "/")
-smoke_csv_run = env_c.Command(
+smoke_csv_run = env_smoke.Command(
     "build/smoke_csv.stamp",
     [smoke_csv, bundle_ort, csv_path],
     f"{_wrap} {smoke_csv_exe} fixtures/ci-smoke/model.json "
@@ -305,7 +333,7 @@ smoke_csv_run = env_c.Command(
 Alias("smoke-csv", smoke_csv_run)
 
 if not is_windows:
-    smoke_dlopen = env_c.Program(
+    smoke_dlopen = env_smoke.Program(
         "build/smoke_dlopen_ort",
         "tools/smoke_dlopen_ort.c",
         LIBS=["stdc++", "dl"],
@@ -315,12 +343,12 @@ if not is_windows:
                 "LINKFLAGS": (
                     ["-Wl,--disable-new-dtags,-rpath,$ORIGIN", "-Wl,-z,noexecstack"]
                     if is_linux
-                    else ["-Wl,-rpath,$ORIGIN"]
+                    else ["-Wl,-rpath,@loader_path"]
                 ),
             }
         ),
     )
-    smoke_dlopen_run = env_c.Command(
+    smoke_dlopen_run = env_smoke.Command(
         "build/smoke_dlopen_ort.stamp",
         [smoke_dlopen, bundle_ort, model_onnx],
         f"{_wrap} ./build/smoke_dlopen_ort "
