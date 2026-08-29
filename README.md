@@ -33,24 +33,28 @@ ORT loads from the addon’s own `bin/` (no env vars for normal use).
 
 ## Build + smoke (Godot 4.6+)
 
-**Target path today:** Linux x86_64 + Godot **≥ 4.6**. Windows/macOS CI builds
-exist; full smoke/docs for those come when we ship them as first-class.
+**Linux** is the day-to-day path. **Windows / macOS** run host `smoke-csv` and
+Godot 4.6 headless `csv_smoke` in CI on every PR.
 
 ```bash
 git clone --recurse-submodules https://github.com/DynamicDevices/godot-onnx-loader.git
 cd godot-onnx-loader
 
-# One-shot: fetch MS ORT, build addon, headless Godot 4.6 CSV smoke
+# Linux one-shot: fetch MS ORT, build, Godot 4.6 CSV smoke
 bash tools/godot_46_ms_ort.sh
 # → GODOT_46_MS_ORT_SMOKE_OK / GODOT_ONNX_CSV_SMOKE_OK
 ```
 
-`scons` pulls Microsoft ORT automatically when needed and bundles
-`libonnxruntime.so.1` next to the addon — you do not need to set `ORT_ROOT`
-for the happy path.
+`scons` pulls Microsoft ORT automatically when needed and bundles it next to
+the addon — you do not need to set `ORT_ROOT` for the happy path.
 
-Already built, with a Godot **4.6+** binary on `PATH` / `GODOT_BIN` /
-`~/Downloads/Godot_v4.6*.x86_64`:
+| Platform | Host smoke | Godot headless |
+|----------|------------|----------------|
+| Linux | `scons platform=linux … smoke-csv` | `godot_46_ms_ort.sh` / `godot_csv_smoke.sh` |
+| Windows | `scons platform=windows … smoke-csv` | CI via `fetch_godot_46.sh` |
+| macOS (arm64) | `scons platform=macos … smoke-csv` | CI via `fetch_godot_46.sh` |
+
+Already built, with a Godot **4.6+** binary (`GODOT_BIN` / Downloads / `.godot-ci/`):
 
 ```bash
 bash tools/godot_csv_smoke.sh   # refuses Godot < 4.6

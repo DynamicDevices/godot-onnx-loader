@@ -33,7 +33,22 @@ _pick_godot() {
 	candidates+=(
 		"${HOME}/Downloads/Godot_v4.6.1-stable_linux.x86_64"
 		"${HOME}/Downloads/Godot_v4.6-stable_linux.x86_64"
+		"${HOME}/Downloads/Godot_v4.6.1-stable_win64.exe"
+		"${HOME}/Downloads/Godot_v4.6.1-stable_macos.universal/Godot.app/Contents/MacOS/Godot"
 	)
+	# CI / tools/fetch_godot_46.sh cache
+	if [[ -x "$ROOT/tools/fetch_godot_46.sh" ]]; then
+		:
+	fi
+	if [[ -f "$ROOT/.godot-ci/Godot_v4.6.1-stable_win64.exe" ]]; then
+		candidates+=("$ROOT/.godot-ci/Godot_v4.6.1-stable_win64.exe")
+	fi
+	if [[ -x "$ROOT/.godot-ci/Godot.app/Contents/MacOS/Godot" ]]; then
+		candidates+=("$ROOT/.godot-ci/Godot.app/Contents/MacOS/Godot")
+	fi
+	if [[ -x "$ROOT/.godot-ci/Godot_v4.6.1-stable_linux.x86_64" ]]; then
+		candidates+=("$ROOT/.godot-ci/Godot_v4.6.1-stable_linux.x86_64")
+	fi
 	# Only after explicit 4.6 paths — PATH may be nix godot 4.5.
 	if command -v godot4 >/dev/null 2>&1; then
 		candidates+=("$(command -v godot4)")
@@ -63,20 +78,49 @@ GODOT="$(_pick_godot)" || {
 }
 echo "godot_csv_smoke: using $GODOT ($(_godot_major_minor "$GODOT"))"
 
+_has_ort_prefix() {
+	local root="$1"
+	[[ -n "$root" ]] || return 1
+	[[ -f "$root/include/onnxruntime_c_api.h" ]] || return 1
+	[[ -f "$root/lib/libonnxruntime.so.1" ]] \
+		|| [[ -f "$root/lib/libonnxruntime.dylib" ]] \
+		|| [[ -f "$root/lib/libonnxruntime.1.20.1.dylib" ]] \
+		|| [[ -f "$root/lib/onnxruntime.dll" ]]
+}
+
+_has_addon_bin() {
+	local b="$ROOT/demo/addons/onnx_loader/bin"
+	[[ -f "$b/libonnx_loader.linux.template_debug.x86_64.so" ]] \
+		|| [[ -f "$b/libonnx_loader.windows.template_debug.x86_64.dll" ]] \
+		|| [[ -d "$b/libonnx_loader.macos.template_debug.framework" ]]
+}
+
+_has_bundled_ort() {
+	local b="$ROOT/addons/onnx_loader/bin"
+	[[ -f "$b/libonnxruntime.so.1" ]] \
+		|| [[ -f "$b/libonnxruntime.dylib" ]] \
+		|| [[ -f "$b/libonnxruntime.1.20.1.dylib" ]] \
+		|| [[ -f "$b/onnxruntime.dll" ]]
+}
+
 if [[ -z "${ONNX_ORT_BIN:-}" ]]; then
-	ORT_ROOT="$(bash "$ROOT/tools/ensure_ort.sh")"
-	export ORT_ROOT
+	if _has_bundled_ort; then
+		export ONNX_ORT_BIN="$ROOT/addons/onnx_loader/bin"
+	else
+		ORT_ROOT="$(bash "$ROOT/tools/ensure_ort.sh")"
+		export ORT_ROOT
+	fi
 fi
-if [[ ! -f "${ORT_ROOT:-}/lib/libonnxruntime.so.1" && -z "${ONNX_ORT_BIN:-}" ]]; then
-	echo "ORT_ROOT missing libonnxruntime.so.1 (set ORT_ROOT or nix develop)" >&2
+if [[ -z "${ONNX_ORT_BIN:-}" ]] && ! _has_ort_prefix "${ORT_ROOT:-}"; then
+	echo "ORT missing (set ONNX_ORT_BIN, ORT_ROOT, or rebuild with ORT_BUNDLE=1)" >&2
 	exit 1
 fi
-if [[ ! -f "$ROOT/demo/addons/onnx_loader/bin/libonnx_loader.linux.template_debug.x86_64.so" ]]; then
-	echo "Build addon first: ORT_ROOT=$ORT_ROOT scons platform=linux target=template_debug" >&2
+if ! _has_addon_bin; then
+	echo "Build addon first (demo/addons/onnx_loader/bin missing platform library)" >&2
 	exit 1
 fi
-if [[ "$ORT_BUNDLE" != "0" && ! -f "$ROOT/addons/onnx_loader/bin/libonnxruntime.so.1" ]]; then
-	echo "Bundled ORT missing — rebuild: scons platform=linux target=template_debug" >&2
+if [[ "$ORT_BUNDLE" != "0" ]] && ! _has_bundled_ort; then
+	echo "Bundled ORT missing — rebuild with ORT_BUNDLE=1" >&2
 	exit 1
 fi
 

@@ -15,4 +15,6 @@ result
 *.uid
 .scons-cache/
 .scons-cache-*/
+.godot-ci/
+.ort/
 *.os

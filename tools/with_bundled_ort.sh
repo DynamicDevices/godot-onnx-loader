@@ -30,9 +30,11 @@ fi
 if [[ -d "$ONNX_ORT_BIN" ]]; then
 	export LD_LIBRARY_PATH="${ONNX_ORT_BIN}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 	export DYLD_LIBRARY_PATH="${ONNX_ORT_BIN}${DYLD_LIBRARY_PATH:+:${DYLD_LIBRARY_PATH}}"
+	export PATH="${ONNX_ORT_BIN}${PATH:+:${PATH}}"
 elif [[ -f "$ONNX_ORT_BIN" ]]; then
 	d="$(dirname "$ONNX_ORT_BIN")"
 	export LD_LIBRARY_PATH="${d}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 	export DYLD_LIBRARY_PATH="${d}${DYLD_LIBRARY_PATH:+:${DYLD_LIBRARY_PATH}}"
+	export PATH="${d}${PATH:+:${PATH}}"
 fi
 exec "$@"
