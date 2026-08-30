@@ -6,7 +6,7 @@
 #define ONNX_LOADER_RUNTIME_H
 
 /** Bump when Julian needs to confirm a rebuilt .so is loaded. */
-#define ONNX_LOADER_BUILD "ort-meta-vizemes-20260830a"
+#define ONNX_LOADER_BUILD "ort-meta-vizemes-20260830b"
 
 #include <stdint.h>
 
