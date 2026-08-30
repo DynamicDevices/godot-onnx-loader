@@ -174,11 +174,12 @@ def _bundle_ort_libs(target, source, env):
     import shutil
     import stat
 
+    stamp = os.path.abspath(str(target[0]))
+    os.makedirs(os.path.dirname(stamp), exist_ok=True)
+
     if os.environ.get("ORT_BUNDLE", "1") == "0":
         print("ORT_BUNDLE=0 — skip copying libonnxruntime (use ONNX_ORT_BIN / store ORT)")
-        stamp = Dir("addons/onnx_loader/bin").abspath
-        os.makedirs(stamp, exist_ok=True)
-        open(os.path.join(stamp, ".ort-bundled.stamp"), "w").close()
+        open(stamp, "w").close()
         return None
 
     dest_dir = Dir("addons/onnx_loader/bin").abspath
@@ -249,11 +250,17 @@ def _bundle_ort_libs(target, source, env):
                 env=patch_env,
             )
             subprocess.check_call(["python3", "tools/clear_ort_execstack.py", "--check", so1])
+    open(stamp, "w").close()
     return None
 
 
+bundle_stamp = (
+    "addons/onnx_loader/bin/.ort-store.stamp"
+    if os.environ.get("ORT_BUNDLE", "1") == "0"
+    else "addons/onnx_loader/bin/.ort-bundled.stamp"
+)
 bundle_ort = env.Command(
-    "addons/onnx_loader/bin/.ort-bundled.stamp",
+    bundle_stamp,
     library,
     _bundle_ort_libs,
 )
