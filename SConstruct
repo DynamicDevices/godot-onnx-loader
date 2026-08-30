@@ -273,6 +273,7 @@ bundle_ort = env.Command(
 # stamp alone is therefore insufficient in a fresh checkout; always restage
 # the selected runtime after the (still cacheable) extension build.
 AlwaysBuild(bundle_ort)
+env.NoCache(bundle_ort)
 
 # Host smokes: CSV through onnx_runtime (all platforms). dlopen ORT probe is Unix-only.
 _smoke_out = os.path.join(Dir("build").abspath, "smoke-out")

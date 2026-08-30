@@ -136,7 +136,7 @@ jobs:
             so=addons/onnx_loader/bin/libonnx_loader.linux.template_debug.x86_64.so
             test -f "$so"
             ! ldd "$so" | grep -q libonnxruntime
-            ldd "$so" | grep -qE 'libstdc\+\+.*=> /nix/store/'
+            readelf -d "$so" | grep -q 'NEEDED.*libstdc++.so.6'
             bash tools/smoke_bad_model.sh
           '
 
