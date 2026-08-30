@@ -139,7 +139,12 @@ else:
     if is_linux:
         # GCC-only; Apple clang rejects -fno-gnu-unique.
         env_cpp.Append(CXXFLAGS=["-fno-gnu-unique"])
-        env_cpp.Append(LINKFLAGS=["-Wl,-z,noexecstack", "-static-libgcc", "-static-libstdc++"])
+        env_cpp.Append(LINKFLAGS=["-Wl,-z,noexecstack"])
+        # Portable bundled releases cannot assume a host C++ runtime. A Nix-native
+        # build instead shares the store libstdc++ used by Godot and ORT, avoiding
+        # a second C++ runtime and cross-runtime symbol/allocator interposition.
+        if os.environ.get("ORT_BUNDLE", "1") != "0":
+            env_cpp.Append(LINKFLAGS=["-static-libgcc", "-static-libstdc++"])
 
 runtime_lib = env_c.StaticLibrary("build/libonnx_runtime", runtime_c)
 

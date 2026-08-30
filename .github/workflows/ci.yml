@@ -136,11 +136,16 @@ jobs:
             so=addons/onnx_loader/bin/libonnx_loader.linux.template_debug.x86_64.so
             test -f "$so"
             ! ldd "$so" | grep -q libonnxruntime
-            ! ldd "$so" | grep -q libstdc++
+            ldd "$so" | grep -qE 'libstdc\+\+.*=> /nix/store/'
             bash tools/smoke_bad_model.sh
-            # Editor smoke needs Godot 4.6+ (compatibility_minimum); flake GODOT_BIN is 4.5.
-            # Godot path is covered by nixos-godot-46-ms-ort.
           '
+
+      - name: Godot 4.6 store ORT smoke
+        env:
+          NIXPKGS: github:NixOS/nixpkgs/b6018f87da91d19d0ab4cf979885689b469cdd41
+        run: |
+          set -euo pipefail
+          bash tools/godot_46_nix_store_ort.sh
 
   nixos-godot-46-ms-ort:
     runs-on: [self-hosted, Linux, nixos, esl-nixos]
