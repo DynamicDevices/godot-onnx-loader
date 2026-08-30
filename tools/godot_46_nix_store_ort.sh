@@ -27,7 +27,7 @@ export ONNX_ORT_BIN="$ORT_LIB/lib"
 export ORT_BUNDLE=0
 unset ORT_MS
 
-# Drop any leftover MS bundle so resolve_bundled_ort_path cannot prefer it.
+# Drop any leftover MS bundle so we don't mix.
 rm -f addons/onnx_loader/bin/libonnxruntime.so*
 rm -f addons/onnx_loader/bin/libstdc++.so.6 addons/onnx_loader/bin/libgcc_s.so.1
 rm -f addons/onnx_loader/bin/.ort-bundled.stamp
@@ -35,12 +35,19 @@ rm -f addons/onnx_loader/bin/.ort-bundled.stamp
 nix shell "${NIXPKGS}#scons" "${NIXPKGS}#gcc" --command \
 	scons -j"$(nproc)" platform=linux target=template_debug
 
-# No bundled ORT beside the .so
-if ls addons/onnx_loader/bin/libonnxruntime.so* >/dev/null 2>&1; then
-	echo "godot_46_nix_store_ort: unexpected bundled ORT after ORT_BUNDLE=0" >&2
-	ls -la addons/onnx_loader/bin/libonnxruntime.so* >&2 || true
-	exit 1
-fi
+# Symlink store ORT into bin/ so .gdextension [dependencies] resolve (still nixpkgs ORT,
+# not a MS copy). Prefer so.1 then so.
+ORT_SO_SRC=""
+for c in "$ONNX_ORT_BIN"/libonnxruntime.so.1 "$ONNX_ORT_BIN"/libonnxruntime.so; do
+	if [[ -f "$c" ]]; then
+		ORT_SO_SRC="$c"
+		break
+	fi
+done
+test -n "$ORT_SO_SRC"
+ln -sfn "$ORT_SO_SRC" addons/onnx_loader/bin/libonnxruntime.so.1
+# Also provide unversioned name if Godot/resolve looks for it.
+ln -sfn "$ORT_SO_SRC" addons/onnx_loader/bin/libonnxruntime.so
 
 root_q=$(printf '%q' "$ROOT")
 out_q=$(printf '%q' "$OUT")
