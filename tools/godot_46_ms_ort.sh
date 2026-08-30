@@ -40,6 +40,10 @@ _scons() {
 
 _scons -j"$(nproc)" platform=linux target=template_debug smoke-dlopen-ort
 
+# Host proof that *this* rebuild accepts dynamic [batch,time,F] (TCN).
+# csv_smoke alone only exercises the flat MLP fixture.
+bash "$ROOT/tools/smoke_dyn_create.sh"
+
 ORT_SO="$ROOT/addons/onnx_loader/bin/libonnxruntime.so.1"
 if [[ ! -f "$ORT_SO" ]]; then
 	echo "godot_46_ms_ort: missing $ORT_SO after scons (ORT_ROOT=$ORT_ROOT ORT_BUNDLE=$ORT_BUNDLE)" >&2
