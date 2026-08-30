@@ -27,9 +27,11 @@ ORT loads from the addon’s own `bin/` (no env vars for normal use).
 | Method | Description |
 |--------|-------------|
 | `load_model(onnx_path)` | Load `.onnx`; introspects input/output sizes |
-| `predict(PackedFloat32Array)` | Raw float logits/outputs |
+| `predict(PackedFloat32Array)` | Raw float logits/outputs (fixed flat `[1,N]`) |
+| `predict_shaped(data, shape)` | Dynamic-time models (e.g. TCN `[1,T,F]`) |
 | `predict_array(Array)` | mat490-compatible `Array` wrapper |
-| `get_input_size()` / `get_output_size()` | Flat element counts (batch=1) |
+| `get_input_size()` / `get_output_size()` | Flat counts, or `-1` when a non-batch dim is dynamic |
+| `get_model_metadata()` / `get_metadata_value(key)` | ONNX `metadata_props` |
 
 ## Build + smoke (Godot 4.6+)
 

@@ -31,4 +31,12 @@ public:
 	int get_input_size() const;
 	int get_output_size() const;
 	Dictionary get_diagnostics() const;
+	/** Custom ONNX metadata_props as String→String (empty if none / unload). */
+	Dictionary get_model_metadata() const;
+	String get_metadata_value(const String &key) const;
+	/**
+	 * Shaped predict: e.g. shape [1, T, F] for TCN. Returns flat output
+	 * (T*n_visemes for [1,T,C]). Empty on failure.
+	 */
+	PackedFloat32Array predict_shaped(const PackedFloat32Array &input, const PackedInt32Array &shape);
 };
