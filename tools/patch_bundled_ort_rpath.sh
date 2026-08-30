@@ -25,8 +25,8 @@ resolve_godot_elf() {
 	local candidate="$1"
 	local magic
 	[[ -n "$candidate" && -e "$candidate" ]] || return 1
-	magic="$(head -c 4 "$candidate" 2>/dev/null || true)"
-	if [[ "$magic" == $'\x7fELF' ]]; then
+	# Avoid bash $() eating/altering binary — compare via od.
+	if head -c 4 "$candidate" 2>/dev/null | od -An -tx1 | grep -q '7f 45 4c 46'; then
 		printf '%s\n' "$candidate"
 		return 0
 	fi
@@ -85,20 +85,29 @@ GODOT_ELF=""
 if [[ -n "${GODOT_BIN:-}" && -e "${GODOT_BIN}" ]]; then
 	GODOT_ELF="$(resolve_godot_elf "$GODOT_BIN" || true)"
 fi
-if [[ -n "$GODOT_ELF" ]] && command -v ldd >/dev/null 2>&1; then
-	GODOT_STDCXX="$(ldd "$GODOT_ELF" 2>/dev/null | awk '/libstdc\+\+\.so\.6/ {print $3; exit}')"
-	GODOT_GCC_S="$(ldd "$GODOT_ELF" 2>/dev/null | awk '/libgcc_s\.so\.1/ {print $3; exit}')"
+if [[ -z "$GODOT_ELF" && -n "${GODOT_BIN:-}" ]]; then
+	echo "patch_bundled_ort_rpath: could not resolve ELF for GODOT_BIN=$GODOT_BIN" >&2
+elif [[ -n "$GODOT_ELF" ]]; then
+	# Prefer readelf NEEDED path via ldd; fall back to readelf if ldd missing.
+	if command -v ldd >/dev/null 2>&1; then
+		GODOT_STDCXX="$(ldd "$GODOT_ELF" 2>/dev/null | awk '/libstdc\+\+\.so\.6/ {print $3; exit}')"
+		GODOT_GCC_S="$(ldd "$GODOT_ELF" 2>/dev/null | awk '/libgcc_s\.so\.1/ {print $3; exit}')"
+	fi
+	if [[ -z "$GODOT_STDCXX" ]] && command -v readelf >/dev/null 2>&1; then
+		if readelf -d "$GODOT_ELF" | grep -q 'libstdc++\.so\.6'; then
+			echo "patch_bundled_ort_rpath: Godot ELF needs libstdc++ but ldd did not resolve it" >&2
+		else
+			echo "patch_bundled_ort_rpath: Godot ELF has no libstdc++ NEEDED (static C++?) elf=$GODOT_ELF" >&2
+			readelf -d "$GODOT_ELF" | awk '/NEEDED/ {print}' | head -20 >&2 || true
+		fi
+	fi
 	if [[ -n "$GODOT_STDCXX" && -f "$GODOT_STDCXX" ]]; then
 		echo "patch_bundled_ort_rpath: matching Godot libstdc++ from $GODOT_ELF -> $GODOT_STDCXX"
 		CXX_LIB="$(dirname "$GODOT_STDCXX")"
-	else
-		echo "patch_bundled_ort_rpath: Godot ELF $GODOT_ELF has no resolvable libstdc++ via ldd" >&2
 	fi
 	if [[ -n "$GODOT_GCC_S" && -f "$GODOT_GCC_S" ]]; then
 		GCC_S_LIB="$(dirname "$GODOT_GCC_S")"
 	fi
-elif [[ -n "${GODOT_BIN:-}" ]]; then
-	echo "patch_bundled_ort_rpath: could not resolve ELF for GODOT_BIN=$GODOT_BIN (wrapper?)" >&2
 fi
 
 # Copy gcc runtime next to ORT so $ORIGIN resolves the same libs ORT uses internally
