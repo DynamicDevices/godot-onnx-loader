@@ -47,7 +47,7 @@
             echo "  ONNX_ORT_BIN=$ONNX_ORT_BIN"
             echo "  GODOT_BIN=$GODOT_BIN"
             echo "  NIX_CXX_LIB=$NIX_CXX_LIB (for tools/patch_bundled_ort_rpath.sh on MS ORT / Godot 4.6)"
-            echo "  For Godot 4.6/mic on Nix: bash tools/godot_46_ms_ort.sh (MS ORT bundle + patchelf)"
+            echo "  For Godot 4.6 on Nix: bash tools/godot_46_nix_store_ort.sh (one exact nixpkgs ORT)"
             echo "  git submodule update --init --recursive"
             echo "  scons platform=linux target=template_debug"
             echo "  bash tools/godot_csv_smoke.sh"

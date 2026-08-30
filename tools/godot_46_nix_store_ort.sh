@@ -6,7 +6,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 NIXPKGS="${NIXPKGS:-github:nixos/nixpkgs/nixos-26.05}"
 OUT="${OUT:-/tmp/godot-onnx-loader-csv-smoke-46-store.txt}"
-export SCONS_CACHE="${SCONS_CACHE:-$ROOT/.scons-cache-godot46-store}"
+SCONS_CACHE_BASE="${SCONS_CACHE:-$ROOT/.scons-cache}"
+export SCONS_CACHE="${SCONS_CACHE_STORE_ORT:-$SCONS_CACHE_BASE/godot46-store-ort}"
 mkdir -p "$SCONS_CACHE"
 
 cd "$ROOT"
@@ -27,10 +28,13 @@ export ONNX_ORT_BIN="$ORT_LIB/lib"
 export ORT_BUNDLE=0
 unset ORT_MS
 
-# Drop any leftover MS bundle so we don't mix.
+# Drop mode-sensitive products so an earlier bundled-ORT build cannot leak into
+# this one. The dedicated cache namespace still retains safe compiler outputs.
+rm -f build/libonnx_runtime.a
+rm -f addons/onnx_loader/bin/libonnx_loader.linux.template_debug.x86_64.so
 rm -f addons/onnx_loader/bin/libonnxruntime.so*
 rm -f addons/onnx_loader/bin/libstdc++.so.6 addons/onnx_loader/bin/libgcc_s.so.1
-rm -f addons/onnx_loader/bin/.ort-bundled.stamp
+rm -f addons/onnx_loader/bin/.ort-bundled.stamp addons/onnx_loader/bin/.ort-store.stamp
 
 nix shell "${NIXPKGS}#scons" "${NIXPKGS}#gcc" --command \
 	scons -j"$(nproc)" platform=linux target=template_debug

@@ -13,7 +13,7 @@ var out: PackedFloat32Array = loader.predict(inputs)
 
 Multi-platform zips include Linux, Windows, and macOS binaries. Linux-only zips
 are smaller. NixOS users: prefer building from the git repo
-(`tools/godot_46_ms_ort.sh`) if the glibc prebuild does not match your Godot.
+(`tools/godot_46_nix_store_ort.sh`) if the glibc prebuild does not match your Godot.
 
 Source / issues: https://github.com/DynamicDevices/godot-onnx-loader
 

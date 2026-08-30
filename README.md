@@ -69,14 +69,15 @@ Host-only (no Godot): `scons smoke-csv`.
 
 ### NixOS
 
-Use the one-shot above from a **plain shell** (not `nix develop`’s Godot 4.5):
+Use the Nix-native one-shot from a **plain shell**:
 
 ```bash
-bash tools/godot_46_ms_ort.sh
+bash tools/godot_46_nix_store_ort.sh
 ```
 
-That script handles MS ORT + `patchelf` for Godot’s FHS wrapper. Do not point
-Godot 4.6 at the nixpkgs ORT from `nix develop`.
+That script builds against and runs with one exact nixpkgs ORT store output. It
+uses a store-ORT-specific SCons cache namespace so bundled MS ORT artifacts
+cannot be restored into the build.
 
 ### Package a release zip
 
