@@ -92,10 +92,17 @@ if [[ -z \"\$NIX_CXX_LIB\" || ! -d \"\$NIX_CXX_LIB\" ]]; then
 	echo \"godot_46_ms_ort: NIX_CXX_LIB unresolved (g++=\$(command -v g++ || echo missing))\" >&2
 	exit 1
 fi
+G=\$(command -v godot4 || command -v godot || true)
+test -n \"\$G\" && test -x \"\$G\"
+export GODOT_BIN=\"\$G\"
 REQUIRE_NIX_PATCH=1 bash $root_q/tools/patch_bundled_ort_rpath.sh
 if ! patchelf --print-rpath $root_q/addons/onnx_loader/bin/libonnxruntime.so.1 | tr ':' '\\n' | grep -Fxq \"\$NIX_CXX_LIB\"; then
-	echo \"godot_46_ms_ort: bundled ORT missing libstdc++ rpath after patch\" >&2
-	exit 1
+	# Godot-matched path may differ from build-shell NIX_CXX_LIB — accept either.
+	GODOT_CXX=\$(dirname \"\$(ldd \"\$G\" | awk '/libstdc\\+\\+\\.so\\.6/ {print \$3; exit}')\")
+	if ! patchelf --print-rpath $root_q/addons/onnx_loader/bin/libonnxruntime.so.1 | tr ':' '\\n' | grep -Fxq \"\$GODOT_CXX\"; then
+		echo \"godot_46_ms_ort: bundled ORT missing libstdc++ rpath after patch (nix=\$NIX_CXX_LIB godot=\$GODOT_CXX)\" >&2
+		exit 1
+	fi
 fi
 if ! patchelf --print-rpath $root_q/addons/onnx_loader/bin/libonnxruntime.so.1 | tr ':' '\\n' | grep -Fxq '\$ORIGIN'; then
 	echo \"godot_46_ms_ort: bundled ORT missing \\\$ORIGIN rpath after patch\" >&2
@@ -107,8 +114,6 @@ test -f $root_q/addons/onnx_loader/bin/libstdc++.so.6
 unset ONNX_ORT_BIN
 export ONNX_LOADER_SKIP_SESSION_RELEASE=1
 bash $root_q/tools/ensure_demo_extension.sh
-G=\$(command -v godot4 || command -v godot || true)
-test -n \"\$G\" && test -x \"\$G\"
 cd $root_q/demo
 \"\$G\" --headless --path . --quit-after 1 res://csv_smoke.tscn 2>&1 | tee $out_q
 grep -q GODOT_ONNX_CSV_SMOKE_OK $out_q

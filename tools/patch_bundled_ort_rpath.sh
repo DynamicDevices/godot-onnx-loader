@@ -44,16 +44,41 @@ fi
 
 BIN_DIR="$(dirname "$ORT_SO")"
 
+# Prefer the libstdc++ the Godot binary actually resolves (same process image),
+# else the build-shell g++ runtime. Julian mid 1003/1004 — discourse.nixos.org
+# “what package provides libstdc++.so.6”: proprietary .so must share one C++ ABI.
+GODOT_STDCXX=""
+GODOT_GCC_S=""
+if [[ -n "${GODOT_BIN:-}" && -x "${GODOT_BIN}" ]] && command -v ldd >/dev/null 2>&1; then
+	GODOT_STDCXX="$(ldd "$GODOT_BIN" 2>/dev/null | awk '/libstdc\+\+\.so\.6/ {print $3; exit}')"
+	GODOT_GCC_S="$(ldd "$GODOT_BIN" 2>/dev/null | awk '/libgcc_s\.so\.1/ {print $3; exit}')"
+	if [[ -n "$GODOT_STDCXX" && -f "$GODOT_STDCXX" ]]; then
+		echo "patch_bundled_ort_rpath: matching Godot libstdc++ from $GODOT_BIN -> $GODOT_STDCXX"
+		CXX_LIB="$(dirname "$GODOT_STDCXX")"
+	fi
+	if [[ -n "$GODOT_GCC_S" && -f "$GODOT_GCC_S" ]]; then
+		GCC_S_LIB="$(dirname "$GODOT_GCC_S")"
+	fi
+fi
+
 # Copy gcc runtime next to ORT so $ORIGIN resolves the same libs ORT uses internally
 # (avoids Godot/Nix LD_LIBRARY_PATH pulling a mismatched libstdc++ into MS ORT).
-if [[ "${REQUIRE_NIX_PATCH:-0}" == "1" ]] && command -v g++ >/dev/null 2>&1; then
-	STDCXX_SO="$(g++ -print-file-name=libstdc++.so.6)"
-	GCC_S_SO="$(g++ -print-file-name=libgcc_s.so.1)"
-	if [[ -f "$STDCXX_SO" ]]; then
-		cp -Lf "$STDCXX_SO" "$BIN_DIR/"
+if [[ "${REQUIRE_NIX_PATCH:-0}" == "1" ]]; then
+	if [[ -n "$GODOT_STDCXX" && -f "$GODOT_STDCXX" ]]; then
+		cp -Lf "$GODOT_STDCXX" "$BIN_DIR/libstdc++.so.6"
+	elif command -v g++ >/dev/null 2>&1; then
+		STDCXX_SO="$(g++ -print-file-name=libstdc++.so.6)"
+		if [[ -f "$STDCXX_SO" ]]; then
+			cp -Lf "$STDCXX_SO" "$BIN_DIR/"
+		fi
 	fi
-	if [[ -f "$GCC_S_SO" ]]; then
-		cp -Lf "$GCC_S_SO" "$BIN_DIR/"
+	if [[ -n "$GODOT_GCC_S" && -f "$GODOT_GCC_S" ]]; then
+		cp -Lf "$GODOT_GCC_S" "$BIN_DIR/libgcc_s.so.1"
+	elif command -v g++ >/dev/null 2>&1; then
+		GCC_S_SO="$(g++ -print-file-name=libgcc_s.so.1)"
+		if [[ -f "$GCC_S_SO" ]]; then
+			cp -Lf "$GCC_S_SO" "$BIN_DIR/"
+		fi
 	fi
 	add_rpath_if_missing '$ORIGIN'
 fi
