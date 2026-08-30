@@ -12,7 +12,7 @@ godot-cpp submodule: custom.py (-Wno-unused-parameter).
 import os
 import sys
 
-from SCons.Script import ARGUMENTS, Alias, Default, Dir, SConscript
+from SCons.Script import ARGUMENTS, Alias, AlwaysBuild, Default, Dir, SConscript
 
 
 def _find_ort_header(root):
@@ -269,6 +269,10 @@ bundle_ort = env.Command(
     library,
     _bundle_ort_libs,
 )
+# The shared libraries are side effects rather than SCons targets. A cached
+# stamp alone is therefore insufficient in a fresh checkout; always restage
+# the selected runtime after the (still cacheable) extension build.
+AlwaysBuild(bundle_ort)
 
 # Host smokes: CSV through onnx_runtime (all platforms). dlopen ORT probe is Unix-only.
 _smoke_out = os.path.join(Dir("build").abspath, "smoke-out")
