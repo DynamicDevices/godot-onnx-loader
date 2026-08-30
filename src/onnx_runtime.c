@@ -467,36 +467,63 @@ OnnxRuntime *onnx_runtime_create(const char *model_onnx_path)
 		return NULL;
 	}
 
-	/* Windows ORT CreateSession takes ORTCHAR_T (wchar_t); Unix takes UTF-8 char*. */
-#ifdef _WIN32
+	/* Load bytes then CreateSessionFromArray — avoids path/mmap quirks under
+	 * some hosts (Nix Godot free(): invalid size on TCN; host path CreateSession OK). */
 	{
-		wchar_t wpath[4096];
-		int n = MultiByteToWideChar(CP_UTF8, 0, model_onnx_path, -1, wpath,
-					   (int)(sizeof(wpath) / sizeof(wpath[0])));
-		if (n <= 0) {
-			fprintf(stderr, "onnx_runtime_create: UTF-8→wchar path failed (%lu)\n",
-				(unsigned long)GetLastError());
+		FILE *f = fopen(model_onnx_path, "rb");
+		if (!f) {
+			fprintf(stderr, "onnx_runtime_create: fopen failed: %s\n", model_onnx_path);
 			ort->ReleaseSessionOptions(opts);
 			onnx_runtime_destroy(rt);
 			return NULL;
 		}
-		if (ort_fail(ort, ort->CreateSession(g_env, wpath, opts, &rt->session),
-			     "CreateSession")) {
+		if (fseek(f, 0, SEEK_END) != 0) {
+			fclose(f);
+			ort->ReleaseSessionOptions(opts);
+			onnx_runtime_destroy(rt);
+			return NULL;
+		}
+		long sz = ftell(f);
+		if (sz <= 0 || sz > (long)(512 * 1024 * 1024)) {
+			fclose(f);
+			ort->ReleaseSessionOptions(opts);
+			onnx_runtime_destroy(rt);
+			return NULL;
+		}
+		if (fseek(f, 0, SEEK_SET) != 0) {
+			fclose(f);
+			ort->ReleaseSessionOptions(opts);
+			onnx_runtime_destroy(rt);
+			return NULL;
+		}
+		void *buf = malloc((size_t)sz);
+		if (!buf) {
+			fclose(f);
+			ort->ReleaseSessionOptions(opts);
+			onnx_runtime_destroy(rt);
+			return NULL;
+		}
+		size_t nread = fread(buf, 1, (size_t)sz, f);
+		fclose(f);
+		if (nread != (size_t)sz) {
+			free(buf);
+			ort->ReleaseSessionOptions(opts);
+			onnx_runtime_destroy(rt);
+			return NULL;
+		}
+		teardown_log("CreateSessionFromArray");
+		if (ort_fail(ort,
+			     ort->CreateSessionFromArray(g_env, buf, (size_t)sz, opts, &rt->session),
+			     "CreateSessionFromArray")) {
+			free(buf);
 			ort->ReleaseSessionOptions(opts);
 			rt->session = NULL;
 			onnx_runtime_destroy(rt);
 			return NULL;
 		}
+		free(buf);
+		teardown_log("CreateSessionFromArray-done");
 	}
-#else
-	if (ort_fail(ort, ort->CreateSession(g_env, model_onnx_path, opts, &rt->session),
-		     "CreateSession")) {
-		ort->ReleaseSessionOptions(opts);
-		rt->session = NULL;
-		onnx_runtime_destroy(rt);
-		return NULL;
-	}
-#endif
 	ort->ReleaseSessionOptions(opts);
 	opts = NULL;
 	rt->session_live = 1;
