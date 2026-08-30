@@ -12,7 +12,7 @@ godot-cpp submodule: custom.py (-Wno-unused-parameter).
 import os
 import sys
 
-from SCons.Script import ARGUMENTS, Alias, Default, Dir, SConscript
+from SCons.Script import ARGUMENTS, Alias, AlwaysBuild, Default, Dir, SConscript
 
 
 def _find_ort_header(root):
@@ -139,7 +139,12 @@ else:
     if is_linux:
         # GCC-only; Apple clang rejects -fno-gnu-unique.
         env_cpp.Append(CXXFLAGS=["-fno-gnu-unique"])
-        env_cpp.Append(LINKFLAGS=["-Wl,-z,noexecstack", "-static-libgcc", "-static-libstdc++"])
+        env_cpp.Append(LINKFLAGS=["-Wl,-z,noexecstack"])
+        # Portable bundled releases cannot assume a host C++ runtime. A Nix-native
+        # build instead shares the store libstdc++ used by Godot and ORT, avoiding
+        # a second C++ runtime and cross-runtime symbol/allocator interposition.
+        if os.environ.get("ORT_BUNDLE", "1") != "0":
+            env_cpp.Append(LINKFLAGS=["-static-libgcc", "-static-libstdc++"])
 
 runtime_lib = env_c.StaticLibrary("build/libonnx_runtime", runtime_c)
 
@@ -264,6 +269,11 @@ bundle_ort = env.Command(
     library,
     _bundle_ort_libs,
 )
+# The shared libraries are side effects rather than SCons targets. A cached
+# stamp alone is therefore insufficient in a fresh checkout; always restage
+# the selected runtime after the (still cacheable) extension build.
+AlwaysBuild(bundle_ort)
+env.NoCache(bundle_ort)
 
 # Host smokes: CSV through onnx_runtime (all platforms). dlopen ORT probe is Unix-only.
 _smoke_out = os.path.join(Dir("build").abspath, "smoke-out")
