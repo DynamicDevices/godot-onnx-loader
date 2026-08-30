@@ -6,7 +6,7 @@
 #define ONNX_LOADER_RUNTIME_H
 
 /** Bump when Julian needs to confirm a rebuilt .so is loaded. */
-#define ONNX_LOADER_BUILD "ort-nix-2511-godot45-20260827l"
+#define ONNX_LOADER_BUILD "ort-meta-vizemes-20260830a"
 
 #include <stdint.h>
 
@@ -40,6 +40,29 @@ int onnx_runtime_predict(const OnnxRuntime *rt, const float *input, int input_le
 
 int onnx_runtime_input_size(const OnnxRuntime *rt);
 int onnx_runtime_output_size(const OnnxRuntime *rt);
+
+/**
+ * Shaped predict for dynamic-time models (e.g. TCN [1,T,F] → [1,T,C]).
+ * shape_len dims in shape[]; input_len must match product(shape).
+ * Writes up to output_cap floats; sets *output_len_out.
+ */
+int onnx_runtime_predict_shaped(const OnnxRuntime *rt, const float *input, int input_len,
+				const int64_t *shape, int shape_len, float *output, int output_cap,
+				int *output_len_out);
+
+/**
+ * Copy custom model metadata value for key into buf (NUL-terminated).
+ * Returns 0 on success, 1 if missing/error. Truncates if longer than buf_len-1.
+ */
+int onnx_runtime_metadata_get(const OnnxRuntime *rt, const char *key, char *buf, int buf_len);
+
+/**
+ * Fill keys_out[0..*count_out) with custom metadata key names (each <= key_buf_len-1).
+ * keys_storage must hold count_cap * key_buf_len bytes (row-major).
+ * Returns 0 on success.
+ */
+int onnx_runtime_metadata_keys(const OnnxRuntime *rt, char *keys_storage, int count_cap,
+			       int key_buf_len, int *count_out);
 
 #ifdef __cplusplus
 }

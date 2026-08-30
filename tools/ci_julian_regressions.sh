@@ -56,4 +56,8 @@ grep -q 'no ONNX_ORT_BIN and missing' /tmp/onnx-loader-julian-missing-ort.txt
 "${CLEAR[@]}" --check "$ORT_SO"
 trap - EXIT
 rm -f "$BAK"
+
+echo "=== regression: dynamic [batch,time,F] must load (TCN / Julian mid 951) ==="
+bash "$ROOT/tools/smoke_dyn_create.sh"
+
 echo JULIAN_CI_REGRESSIONS_OK
