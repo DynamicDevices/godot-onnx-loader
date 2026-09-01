@@ -38,6 +38,22 @@ func _ready() -> void:
 		get_tree().quit(1)
 		return
 	print("ONNX_LOADER_DIAG ", m.get_diagnostics())
+	var inputs: Array = m.get_input_descriptors()
+	var outputs: Array = m.get_output_descriptors()
+	if inputs.size() != 1 or outputs.size() < 1:
+		push_error("unexpected fixture descriptors: %s / %s" % [inputs, outputs])
+		get_tree().quit(1)
+		return
+	if m.run():
+		push_error("run unexpectedly accepted an unbound required input")
+		get_tree().quit(1)
+		return
+	var input_name: String = inputs[0]["name"]
+	var input_shape: PackedInt64Array = inputs[0]["shape"]
+	for i in input_shape.size():
+		if input_shape[i] <= 0:
+			input_shape[i] = 1
+	var output_name: String = outputs[0]["name"]
 
 	var nfeat: int = m.get_input_size()
 	var file := FileAccess.open(csv_path, FileAccess.READ)
@@ -60,7 +76,33 @@ func _ready() -> void:
 		ctx.resize(nfeat)
 		for i in nfeat:
 			ctx[i] = float(row[3 + i])
-		var logits: PackedFloat32Array = m.predict(ctx)
+		var logits := PackedFloat32Array()
+		if n == 0:
+			if not m.set_input(input_name, ctx, input_shape):
+				push_error("set_input failed: %s" % m.get_last_error())
+				get_tree().quit(1)
+				return
+			if not m.run(PackedStringArray([output_name])):
+				push_error("named run failed: %s" % m.get_last_error())
+				get_tree().quit(1)
+				return
+			if m.get_run_generation() != 1 or not m.has_output(output_name):
+				push_error("named output generation/cache contract failed")
+				get_tree().quit(1)
+				return
+			logits = m.get_output(output_name)
+			if logits.is_empty() or m.get_output_shape(output_name).is_empty():
+				push_error("named output retrieval failed")
+				get_tree().quit(1)
+				return
+			var bad_run_succeeded: bool = m.run(PackedStringArray(["not_a_model_output"]))
+			if bad_run_succeeded or m.has_output(output_name) or m.get_run_generation() != 1:
+				push_error("failed run exposed stale output or changed generation")
+				get_tree().quit(1)
+				return
+			print("GODOT_ONNX_NAMED_API_OK generation=%d" % m.get_run_generation())
+		else:
+			logits = m.predict(ctx)
 		if logits.is_empty():
 			push_error("predict failed probe=%d" % probe)
 			get_tree().quit(1)

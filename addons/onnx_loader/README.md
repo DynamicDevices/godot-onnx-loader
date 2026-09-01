@@ -11,6 +11,10 @@ loader.load_model("res://model.onnx")
 var out: PackedFloat32Array = loader.predict(inputs)
 ```
 
+For multi-input/output models use persistent named bindings:
+`set_input(name, data, shape)`, `run(output_names)`, then `get_output(name)`.
+The existing `predict()` calls remain available for simple models.
+
 Multi-platform zips include Linux, Windows, and macOS binaries. Linux-only zips
 are smaller. NixOS users: prefer building from the git repo
 (`tools/godot_46_nix_store_ort.sh`) if the glibc prebuild does not match your Godot.

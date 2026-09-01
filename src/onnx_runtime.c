@@ -18,6 +18,15 @@
 #include "onnxruntime_c_api.h"
 
 #define ONNX_NAME_MAX 128
+#define ONNX_IO_MAX 32
+
+typedef struct TensorInfo {
+	char name[ONNX_NAME_MAX];
+	int element_type;
+	int rank;
+	int64_t dims[ONNX_LOADER_MAX_RANK];
+	int flat_size;
+} TensorInfo;
 
 #ifdef _WIN32
 #define ORT_PATH_SEP '\\'
@@ -37,14 +46,16 @@ struct OnnxRuntime {
 	const OrtApi *ort;
 	OrtSession *session;
 	int session_live;
-	char input_name[ONNX_NAME_MAX];
-	char output_name[ONNX_NAME_MAX];
-	int input_size; /* flat elements for rank-2 [1,N]; -1 if shaped/dynamic */
-	int output_size; /* -1 if dynamic */
-	int input_rank;
-	int output_rank;
-	int64_t input_dims[8];
-	int64_t output_dims[8];
+	int input_count;
+	int output_count;
+	TensorInfo inputs[ONNX_IO_MAX];
+	TensorInfo outputs[ONNX_IO_MAX];
+	OrtValue *bound_inputs[ONNX_IO_MAX];
+	OrtValue *run_outputs[ONNX_IO_MAX];
+	int run_output_indices[ONNX_IO_MAX];
+	int run_output_count;
+	uint64_t generation;
+	char last_error[512];
 };
 
 static const OrtApi *g_ort;
@@ -67,6 +78,35 @@ static int ort_fail(const OrtApi *ort, OrtStatus *st, const char *what)
 	fprintf(stderr, "ORT %s: %s\n", what, msg ? msg : "(null)");
 	ort->ReleaseStatus(st);
 	return -1;
+}
+
+static int runtime_error(OnnxRuntime *rt, const char *message)
+{
+	if (rt) {
+		snprintf(rt->last_error, sizeof(rt->last_error), "%s", message ? message : "unknown error");
+	}
+	fprintf(stderr, "onnx_loader: %s\n", message ? message : "unknown error");
+	return -1;
+}
+
+static int find_tensor(const TensorInfo *items, int count, const char *name)
+{
+	if (!name) return -1;
+	for (int i = 0; i < count; i++) {
+		if (strcmp(items[i].name, name) == 0) return i;
+	}
+	return -1;
+}
+
+static void release_values(OnnxRuntime *rt, OrtValue **values, int count)
+{
+	if (!rt || !rt->ort) return;
+	for (int i = 0; i < count; i++) {
+		if (values[i]) {
+			rt->ort->ReleaseValue(values[i]);
+			values[i] = NULL;
+		}
+	}
 }
 
 static int resolve_bundled_ort_path(char *out, size_t out_cap)
@@ -342,7 +382,8 @@ static void release_ort_string(const OrtApi *ort, OrtAllocator *alloc, char *s)
 }
 
 static int tensor_float_info(const OrtApi *ort, OrtSession *session, int is_input, int index,
-			     int *out_rank, int64_t *out_dims, int dims_cap, int *out_flat_or_neg1)
+			     int *out_rank, int64_t *out_dims, int dims_cap, int *out_flat_or_neg1,
+			     int *out_element_type)
 {
 	OrtTypeInfo *type_info = NULL;
 	const OrtTensorTypeAndShapeInfo *tensor_info = NULL;
@@ -367,12 +408,12 @@ static int tensor_float_info(const OrtApi *ort, OrtSession *session, int is_inpu
 	if (ort_fail(ort, ort->CastTypeInfoToTensorInfo(type_info, &tensor_info),
 		     "CastTypeInfoToTensorInfo") ||
 	    ort_fail(ort, ort->GetDimensionsCount(tensor_info, &rank), "GetDimensionsCount") ||
-	    rank == 0 || rank > (size_t)dims_cap) {
+	    rank > (size_t)dims_cap) {
 		goto done;
 	}
 
-	shape = (int64_t *)calloc(rank, sizeof(int64_t));
-	if (!shape) {
+	shape = rank ? (int64_t *)calloc(rank, sizeof(int64_t)) : NULL;
+	if (rank && !shape) {
 		goto done;
 	}
 	if (ort_fail(ort, ort->GetDimensions(tensor_info, shape, rank), "GetDimensions")) {
@@ -386,6 +427,7 @@ static int tensor_float_info(const OrtApi *ort, OrtSession *session, int is_inpu
 		fprintf(stderr, "only float32 tensors supported (got type %d)\n", (int)elem_type);
 		goto done;
 	}
+	*out_element_type = (int)elem_type;
 
 	*out_rank = (int)rank;
 	for (size_t i = 0; i < rank; i++) {
@@ -446,8 +488,6 @@ OnnxRuntime *onnx_runtime_create(const char *model_onnx_path)
 
 	OrtSessionOptions *opts = NULL;
 	OrtAllocator *allocator = NULL;
-	char *tmp_in = NULL;
-	char *tmp_out = NULL;
 
 	if (ort_env_use() != 0) {
 		free(rt);
@@ -528,30 +568,40 @@ OnnxRuntime *onnx_runtime_create(const char *model_onnx_path)
 	opts = NULL;
 	rt->session_live = 1;
 
-	if (
-	    ort_fail(ort, ort->GetAllocatorWithDefaultOptions(&allocator), "GetAllocator") ||
-	    ort_fail(ort, ort->SessionGetInputName(rt->session, 0, allocator, &tmp_in),
-		     "GetInputName") ||
-	    ort_fail(ort, ort->SessionGetOutputName(rt->session, 0, allocator, &tmp_out),
-		     "GetOutputName")) {
+	size_t input_count = 0;
+	size_t output_count = 0;
+	if (ort_fail(ort, ort->GetAllocatorWithDefaultOptions(&allocator), "GetAllocator") ||
+	    ort_fail(ort, ort->SessionGetInputCount(rt->session, &input_count), "GetInputCount") ||
+	    ort_fail(ort, ort->SessionGetOutputCount(rt->session, &output_count), "GetOutputCount") ||
+	    input_count == 0 || output_count == 0 || input_count > ONNX_IO_MAX ||
+	    output_count > ONNX_IO_MAX) {
 		onnx_runtime_destroy(rt);
 		return NULL;
 	}
-
-	copy_io_name(rt->input_name, sizeof(rt->input_name), tmp_in);
-	copy_io_name(rt->output_name, sizeof(rt->output_name), tmp_out);
-	release_ort_string(ort, allocator, tmp_in);
-	release_ort_string(ort, allocator, tmp_out);
-
-	memset(rt->input_dims, 0, sizeof(rt->input_dims));
-	memset(rt->output_dims, 0, sizeof(rt->output_dims));
-	if (rt->input_name[0] == '\0' || rt->output_name[0] == '\0' ||
-	    tensor_float_info(ort, rt->session, 1, 0, &rt->input_rank, rt->input_dims, 8,
-			      &rt->input_size) != 0 ||
-	    tensor_float_info(ort, rt->session, 0, 0, &rt->output_rank, rt->output_dims, 8,
-			      &rt->output_size) != 0) {
-		onnx_runtime_destroy(rt);
-		return NULL;
+	rt->input_count = (int)input_count;
+	rt->output_count = (int)output_count;
+	for (int kind = 0; kind < 2; kind++) {
+		TensorInfo *items = kind == 0 ? rt->inputs : rt->outputs;
+		int count = kind == 0 ? rt->input_count : rt->output_count;
+		for (int i = 0; i < count; i++) {
+			char *tmp_name = NULL;
+			OrtStatus *name_status = kind == 0
+				? ort->SessionGetInputName(rt->session, (size_t)i, allocator, &tmp_name)
+				: ort->SessionGetOutputName(rt->session, (size_t)i, allocator, &tmp_name);
+			if (ort_fail(ort, name_status, kind == 0 ? "GetInputName" : "GetOutputName") ||
+			    !tmp_name) {
+				onnx_runtime_destroy(rt);
+				return NULL;
+			}
+			copy_io_name(items[i].name, sizeof(items[i].name), tmp_name);
+			release_ort_string(ort, allocator, tmp_name);
+			if (tensor_float_info(ort, rt->session, kind == 0, i, &items[i].rank,
+					      items[i].dims, ONNX_LOADER_MAX_RANK,
+					      &items[i].flat_size, &items[i].element_type) != 0) {
+				onnx_runtime_destroy(rt);
+				return NULL;
+			}
+		}
 	}
 
 	return rt;
@@ -564,6 +614,8 @@ void onnx_runtime_destroy(OnnxRuntime *rt)
 	}
 	const OrtApi *ort = rt->ort;
 	teardown_log("destroy-enter");
+	release_values(rt, rt->run_outputs, rt->run_output_count);
+	release_values(rt, rt->bound_inputs, rt->input_count);
 	if (ort && rt->session_live && rt->session) {
 		if (skip_session_release()) {
 			teardown_log("ReleaseSession-skipped");
@@ -666,137 +718,227 @@ uint32_t onnx_runtime_ort_api_version(void)
 
 const char *onnx_runtime_input_name(const OnnxRuntime *rt)
 {
-	return rt ? rt->input_name : "";
+	return rt && rt->input_count ? rt->inputs[0].name : "";
 }
 
 const char *onnx_runtime_output_name(const OnnxRuntime *rt)
 {
-	return rt ? rt->output_name : "";
+	return rt && rt->output_count ? rt->outputs[0].name : "";
 }
 
 int onnx_runtime_input_size(const OnnxRuntime *rt)
 {
-	return rt ? rt->input_size : 0;
+	return rt && rt->input_count ? rt->inputs[0].flat_size : 0;
 }
 
 int onnx_runtime_output_size(const OnnxRuntime *rt)
 {
-	return rt ? rt->output_size : 0;
+	return rt && rt->output_count ? rt->outputs[0].flat_size : 0;
 }
 
-static int onnx_runtime_predict_shaped_impl(const OnnxRuntime *rt, const float *input, int input_len,
-					    const int64_t *shape, int shape_len, float *output,
-					    int output_cap, int *output_len_out);
+int onnx_runtime_input_count(const OnnxRuntime *rt) { return rt ? rt->input_count : 0; }
+int onnx_runtime_output_count(const OnnxRuntime *rt) { return rt ? rt->output_count : 0; }
+
+static int copy_descriptor(const TensorInfo *info, OnnxTensorDescriptor *out)
+{
+	if (!info || !out) return -1;
+	out->name = info->name;
+	out->element_type = info->element_type;
+	out->rank = info->rank;
+	memcpy(out->dimensions, info->dims, sizeof(out->dimensions));
+	out->flat_size = info->flat_size;
+	return 0;
+}
+
+int onnx_runtime_input_descriptor(const OnnxRuntime *rt, int index, OnnxTensorDescriptor *out)
+{
+	return !rt || index < 0 || index >= rt->input_count ? -1 : copy_descriptor(&rt->inputs[index], out);
+}
+
+int onnx_runtime_output_descriptor(const OnnxRuntime *rt, int index, OnnxTensorDescriptor *out)
+{
+	return !rt || index < 0 || index >= rt->output_count ? -1 : copy_descriptor(&rt->outputs[index], out);
+}
+
+int onnx_runtime_set_input_f32(OnnxRuntime *rt, const char *name, const float *data, int data_len,
+			       const int64_t *shape, int shape_len)
+{
+	if (!rt || !rt->session_live || !data || data_len < 0 || shape_len < 0 ||
+	    shape_len > ONNX_LOADER_MAX_RANK || (shape_len && !shape))
+		return runtime_error(rt, "invalid set_input arguments");
+	int index = find_tensor(rt->inputs, rt->input_count, name);
+	if (index < 0) return runtime_error(rt, "unknown input name");
+	TensorInfo *desc = &rt->inputs[index];
+	if (shape_len != desc->rank) return runtime_error(rt, "input rank does not match model");
+	int64_t need = 1;
+	for (int i = 0; i < shape_len; i++) {
+		if (shape[i] <= 0 || (desc->dims[i] > 0 && desc->dims[i] != shape[i]) ||
+		    need > INT32_MAX / shape[i])
+			return runtime_error(rt, "input shape does not match model");
+		need *= shape[i];
+	}
+	if (need != data_len) return runtime_error(rt, "input data length does not match shape");
+	OrtAllocator *allocator = NULL;
+	OrtValue *value = NULL;
+	if (ort_fail(rt->ort, rt->ort->GetAllocatorWithDefaultOptions(&allocator), "GetAllocator") ||
+	    ort_fail(rt->ort, rt->ort->CreateTensorAsOrtValue(allocator, shape, (size_t)shape_len,
+			ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &value), "CreateTensorAsOrtValue"))
+		return runtime_error(rt, "failed to allocate input tensor");
+	float *dest = NULL;
+	if (ort_fail(rt->ort, rt->ort->GetTensorMutableData(value, (void **)&dest), "GetTensorData")) {
+		rt->ort->ReleaseValue(value);
+		return runtime_error(rt, "failed to access input tensor");
+	}
+	memcpy(dest, data, (size_t)data_len * sizeof(float));
+	if (rt->bound_inputs[index]) rt->ort->ReleaseValue(rt->bound_inputs[index]);
+	rt->bound_inputs[index] = value;
+	rt->last_error[0] = '\0';
+	return 0;
+}
+
+int onnx_runtime_run(OnnxRuntime *rt, const char *const *output_names, int output_count)
+{
+	if (!rt || !rt->session_live || output_count < 0 || output_count > rt->output_count)
+		return runtime_error(rt, "invalid run arguments");
+	/* A run attempt starts a new output epoch. Invalidate the previous cache
+	 * before validation so a failed run can never expose stale values. */
+	release_values(rt, rt->run_outputs, rt->run_output_count);
+	rt->run_output_count = 0;
+	for (int i = 0; i < rt->input_count; i++)
+		if (!rt->bound_inputs[i]) return runtime_error(rt, "required input is not bound");
+	int count = output_count ? output_count : rt->output_count;
+	const char *input_names[ONNX_IO_MAX] = {0};
+	const char *selected_names[ONNX_IO_MAX] = {0};
+	const OrtValue *input_values[ONNX_IO_MAX] = {0};
+	int selected_indices[ONNX_IO_MAX] = {0};
+	for (int i = 0; i < rt->input_count; i++) {
+		input_names[i] = rt->inputs[i].name;
+		input_values[i] = rt->bound_inputs[i];
+	}
+	for (int i = 0; i < count; i++) {
+		const char *name = output_count ? output_names[i] : rt->outputs[i].name;
+		int index = find_tensor(rt->outputs, rt->output_count, name);
+		if (index < 0) return runtime_error(rt, "unknown output name");
+		selected_names[i] = rt->outputs[index].name;
+		selected_indices[i] = index;
+	}
+	OrtValue *fresh[ONNX_IO_MAX] = {0};
+	if (ort_fail(rt->ort, rt->ort->Run(rt->session, NULL, input_names, input_values,
+			(size_t)rt->input_count, selected_names, (size_t)count, fresh), "Run")) {
+		release_values(rt, fresh, count);
+		return runtime_error(rt, "ONNX Runtime run failed");
+	}
+	for (int i = 0; i < count; i++) {
+		rt->run_outputs[i] = fresh[i];
+		rt->run_output_indices[i] = selected_indices[i];
+	}
+	rt->run_output_count = count;
+	rt->generation++;
+	rt->last_error[0] = '\0';
+	return 0;
+}
+
+static OrtValue *find_run_output(const OnnxRuntime *rt, const char *name)
+{
+	int index = rt ? find_tensor(rt->outputs, rt->output_count, name) : -1;
+	for (int i = 0; rt && index >= 0 && i < rt->run_output_count; i++)
+		if (rt->run_output_indices[i] == index) return rt->run_outputs[i];
+	return NULL;
+}
+
+int onnx_runtime_has_output(const OnnxRuntime *rt, const char *name)
+{
+	return find_run_output(rt, name) != NULL;
+}
+
+int onnx_runtime_output_data_f32(const OnnxRuntime *rt, const char *name, float *output,
+				 int output_cap, int *output_len_out)
+{
+	OrtValue *value = find_run_output(rt, name);
+	if (!value || !output || output_cap < 0) return -1;
+	OrtTensorTypeAndShapeInfo *info = NULL;
+	size_t count = 0;
+	float *data = NULL;
+	if (ort_fail(rt->ort, rt->ort->GetTensorTypeAndShape(value, &info), "GetTensorTypeAndShape") ||
+	    ort_fail(rt->ort, rt->ort->GetTensorShapeElementCount(info, &count), "GetTensorShapeElementCount") ||
+	    ort_fail(rt->ort, rt->ort->GetTensorMutableData(value, (void **)&data), "GetTensorData")) {
+		if (info) rt->ort->ReleaseTensorTypeAndShapeInfo(info);
+		return -1;
+	}
+	rt->ort->ReleaseTensorTypeAndShapeInfo(info);
+	if (count > (size_t)output_cap || count > INT32_MAX) return -1;
+	memcpy(output, data, count * sizeof(float));
+	if (output_len_out) *output_len_out = (int)count;
+	return 0;
+}
+
+int onnx_runtime_output_slice_f32(const OnnxRuntime *rt, const char *name, int offset, int count,
+				  float *output)
+{
+	OrtValue *value = find_run_output(rt, name);
+	OrtTensorTypeAndShapeInfo *info = NULL;
+	size_t total = 0;
+	float *data = NULL;
+	if (!value || !output || offset < 0 || count < 0 ||
+	    ort_fail(rt->ort, rt->ort->GetTensorTypeAndShape(value, &info), "GetTensorTypeAndShape") ||
+	    ort_fail(rt->ort, rt->ort->GetTensorShapeElementCount(info, &total), "GetTensorShapeElementCount") ||
+	    ort_fail(rt->ort, rt->ort->GetTensorMutableData(value, (void **)&data), "GetTensorData")) {
+		if (info) rt->ort->ReleaseTensorTypeAndShapeInfo(info);
+		return -1;
+	}
+	rt->ort->ReleaseTensorTypeAndShapeInfo(info);
+	if ((size_t)offset > total || (size_t)count > total - (size_t)offset) return -1;
+	memcpy(output, data + offset, (size_t)count * sizeof(float));
+	return 0;
+}
+
+int onnx_runtime_output_shape(const OnnxRuntime *rt, const char *name, int64_t *shape,
+			      int shape_cap, int *shape_len_out)
+{
+	OrtValue *value = find_run_output(rt, name);
+	OrtTensorTypeAndShapeInfo *info = NULL;
+	size_t rank = 0;
+	if (!value || shape_cap < 0 ||
+	    ort_fail(rt->ort, rt->ort->GetTensorTypeAndShape(value, &info), "GetTensorTypeAndShape") ||
+	    ort_fail(rt->ort, rt->ort->GetDimensionsCount(info, &rank), "GetDimensionsCount")) {
+		if (info) rt->ort->ReleaseTensorTypeAndShapeInfo(info);
+		return -1;
+	}
+	if (rank > (size_t)shape_cap || (rank && !shape) ||
+	    ort_fail(rt->ort, rt->ort->GetDimensions(info, shape, rank), "GetDimensions")) {
+		rt->ort->ReleaseTensorTypeAndShapeInfo(info);
+		return -1;
+	}
+	rt->ort->ReleaseTensorTypeAndShapeInfo(info);
+	if (shape_len_out) *shape_len_out = (int)rank;
+	return 0;
+}
+
+uint64_t onnx_runtime_run_generation(const OnnxRuntime *rt) { return rt ? rt->generation : 0; }
+const char *onnx_runtime_last_error(const OnnxRuntime *rt) { return rt ? rt->last_error : "model not loaded"; }
 
 int onnx_runtime_predict(const OnnxRuntime *rt, const float *input, int input_len,
 			 float *output, int output_cap, int *output_len_out)
 {
-	if (!rt || !rt->session_live || !input || !output) {
-		return -1;
-	}
-	/* Flat MLP path: fixed [1, N] */
-	if (rt->input_size > 0) {
-		if (input_len != rt->input_size || output_cap < rt->output_size) {
-			return -1;
-		}
-		int64_t shape[2] = {1, (int64_t)rt->input_size};
-		return onnx_runtime_predict_shaped_impl(rt, input, input_len, shape, 2, output,
-							output_cap, output_len_out);
-	}
-	return -1;
+	if (!rt || !rt->input_count || rt->inputs[0].flat_size != input_len) return -1;
+	int64_t concrete_shape[ONNX_LOADER_MAX_RANK];
+	for (int i = 0; i < rt->inputs[0].rank; i++)
+		concrete_shape[i] = rt->inputs[0].dims[i] > 0 ? rt->inputs[0].dims[i] : 1;
+	return onnx_runtime_predict_shaped(rt, input, input_len, concrete_shape,
+			rt->inputs[0].rank, output, output_cap, output_len_out);
 }
 
 int onnx_runtime_predict_shaped(const OnnxRuntime *rt, const float *input, int input_len,
 				const int64_t *shape, int shape_len, float *output, int output_cap,
 				int *output_len_out)
 {
-	return onnx_runtime_predict_shaped_impl(rt, input, input_len, shape, shape_len, output,
-						output_cap, output_len_out);
-}
-
-static int onnx_runtime_predict_shaped_impl(const OnnxRuntime *rt, const float *input, int input_len,
-					    const int64_t *shape, int shape_len, float *output,
-					    int output_cap, int *output_len_out)
-{
-	if (!rt || !rt->session_live || !input || !output || !shape || shape_len <= 0 ||
-	    shape_len > 8) {
+	OnnxRuntime *mutable_rt = (OnnxRuntime *)rt;
+	const char *output_name = rt ? rt->outputs[0].name : NULL;
+	if (!rt || rt->input_count != 1 || rt->output_count < 1 ||
+	    onnx_runtime_set_input_f32(mutable_rt, rt->inputs[0].name, input, input_len, shape, shape_len) ||
+	    onnx_runtime_run(mutable_rt, &output_name, 1))
 		return -1;
-	}
-	int64_t need = 1;
-	for (int i = 0; i < shape_len; i++) {
-		if (shape[i] <= 0) {
-			return -1;
-		}
-		need *= shape[i];
-	}
-	if (need != (int64_t)input_len || need > INT32_MAX) {
-		return -1;
-	}
-
-	const OrtApi *ort = rt->ort;
-	OrtAllocator *allocator = NULL;
-	OrtValue *in_tensor = NULL;
-	OrtValue *out_tensor = NULL;
-	int rc = -1;
-
-	if (ort_fail(ort, ort->GetAllocatorWithDefaultOptions(&allocator), "GetAllocator")) {
-		goto done;
-	}
-
-	if (ort_fail(ort,
-		     ort->CreateTensorAsOrtValue(allocator, shape, (size_t)shape_len,
-						 ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &in_tensor),
-		     "CreateTensorAsOrtValue")) {
-		goto done;
-	}
-
-	float *in_data = NULL;
-	if (ort_fail(ort, ort->GetTensorMutableData(in_tensor, (void **)&in_data),
-		     "GetTensorData")) {
-		goto done;
-	}
-	memcpy(in_data, input, (size_t)input_len * sizeof(float));
-
-	const char *in_names[] = {rt->input_name};
-	const char *out_names[] = {rt->output_name};
-	if (ort_fail(ort,
-		     ort->Run(rt->session, NULL, in_names, (const OrtValue *const *)&in_tensor, 1,
-			      out_names, 1, &out_tensor),
-		     "Run")) {
-		goto done;
-	}
-
-	float *out_data = NULL;
-	size_t out_count = 0;
-	OrtTensorTypeAndShapeInfo *out_info = NULL;
-	if (ort_fail(ort, ort->GetTensorTypeAndShape(out_tensor, &out_info), "GetTensorTypeAndShape") ||
-	    ort_fail(ort, ort->GetTensorShapeElementCount(out_info, &out_count),
-		     "GetTensorShapeElementCount") ||
-	    ort_fail(ort, ort->GetTensorMutableData(out_tensor, (void **)&out_data),
-		     "GetTensorData")) {
-		if (out_info) {
-			ort->ReleaseTensorTypeAndShapeInfo(out_info);
-		}
-		goto done;
-	}
-	ort->ReleaseTensorTypeAndShapeInfo(out_info);
-	if ((int)out_count > output_cap) {
-		goto done;
-	}
-	memcpy(output, out_data, out_count * sizeof(float));
-	if (output_len_out) {
-		*output_len_out = (int)out_count;
-	}
-	rc = 0;
-
-done:
-	if (out_tensor) {
-		ort->ReleaseValue(out_tensor);
-	}
-	if (in_tensor) {
-		ort->ReleaseValue(in_tensor);
-	}
-	return rc;
+	return onnx_runtime_output_data_f32(rt, rt->outputs[0].name, output, output_cap, output_len_out);
 }
 
 int onnx_runtime_metadata_get(const OnnxRuntime *rt, const char *key, char *buf, int buf_len)
