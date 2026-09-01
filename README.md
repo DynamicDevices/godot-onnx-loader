@@ -67,6 +67,13 @@ enter values, and run an individual trial. The output tables use the actual
 names and shapes returned by ONNX Runtime. A separate metadata panel displays
 the model's ONNX `metadata_props`, or clearly reports that none are present.
 
+ONNX reports a dynamic dimension as `-1`; for example `[-1,1600]` commonly
+means a runtime-selected batch size followed by 1,600 features. The inspector
+initializes dynamic dimensions to `1`, so a one-item trial becomes `[1,1600]`.
+Tensors of up to 512 values use indexed spin boxes. Larger tensors use a
+pasteable whitespace/comma-separated text field (with a zero-fill shortcut), so
+the display limit never prevents binding the complete tensor.
+
 The included `demo/models/matrix_vector.onnx` model is intentionally explicit:
 
 ```text

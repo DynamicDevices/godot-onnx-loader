@@ -79,7 +79,7 @@ func _add_input_table(descriptor: Dictionary) -> void:
 	grid.add_theme_constant_override("h_separation", 8)
 	grid.add_theme_constant_override("v_separation", 4)
 	panel.add_child(grid)
-	input_editors[descriptor["name"]] = {"shape": shape_edit, "grid": grid, "values": []}
+	input_editors[descriptor["name"]] = {"shape": shape_edit, "grid": grid, "values": [], "text": null}
 	apply.pressed.connect(_rebuild_input_values.bind(descriptor["name"]))
 	_rebuild_input_values(descriptor["name"])
 
@@ -91,10 +91,27 @@ func _rebuild_input_values(input_name: String) -> void:
 	var grid: GridContainer = editor["grid"]
 	_clear(grid)
 	editor["values"] = []
-	if count < 1 or count > MAX_VISIBLE_VALUES:
+	editor["text"] = null
+	if count < 1:
 		var warning := Label.new()
-		warning.text = "Shape contains %d values; this educational UI supports 1–%d visible values." % [count, MAX_VISIBLE_VALUES]
+		warning.text = "Every concrete dimension must be at least 1."
 		grid.add_child(warning)
+		return
+	if count > MAX_VISIBLE_VALUES:
+		var explanation := Label.new()
+		explanation.text = "%d values: paste whitespace/comma-separated floats below (the table view is limited to %d)." % [count, MAX_VISIBLE_VALUES]
+		explanation.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		grid.add_child(explanation)
+		var fill := Button.new()
+		fill.text = "Fill %d Zeros" % count
+		grid.add_child(fill)
+		var text := TextEdit.new()
+		text.placeholder_text = "Paste exactly %d float values" % count
+		text.custom_minimum_size = Vector2(0, 130)
+		text.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+		grid.add_child(text)
+		editor["text"] = text
+		fill.pressed.connect(_fill_zeros.bind(text, count))
 		return
 	for index in count:
 		var label := Label.new()
@@ -149,17 +166,20 @@ func _bind_inputs() -> bool:
 		var editor: Dictionary = input_editors[input_name]
 		var shape := _parse_shape(editor["shape"].text)
 		var boxes: Array = editor["values"]
-		if boxes.size() != _element_count(shape):
-			_error("Apply the concrete shape for input %s before running." % input_name)
-			return false
 		var values := PackedFloat32Array()
-		for box: SpinBox in boxes:
-			values.append(box.value)
+		if editor["text"] != null:
+			values = _parse_values((editor["text"] as TextEdit).text)
+		else:
+			for box: SpinBox in boxes:
+				values.append(box.value)
+		if values.size() != _element_count(shape):
+			_error("Input %s with shape %s needs %d values; found %d. Apply the shape and complete its values." % [input_name, shape, _element_count(shape), values.size()])
+			return false
 		if not loader.set_input(input_name, values, shape):
 			_error("set_input(%s): %s" % [input_name, loader.get_last_error()])
 			return false
-		lines.append("IN  %s shape=%s values=%s" % [input_name, shape, values])
-		print("ONNX_INSPECTOR_INPUT name=%s shape=%s values=%s" % [input_name, shape, values])
+		lines.append("IN  %s shape=%s values=%s" % [input_name, shape, _preview(values)])
+		print("ONNX_INSPECTOR_INPUT name=%s shape=%s values=%s" % [input_name, shape, _preview(values)])
 	log_text.text = "\n".join(lines)
 	return true
 
@@ -191,8 +211,12 @@ func _show_outputs() -> void:
 			box.custom_minimum_size.x = 115
 			grid.add_child(box)
 			box.value = values[index]
-		lines.append("OUT %s shape=%s values=%s" % [output_name, shape, values])
-		print("ONNX_INSPECTOR_OUTPUT name=%s shape=%s values=%s" % [output_name, shape, values])
+		if values.size() > MAX_VISIBLE_VALUES:
+			var truncated := Label.new()
+			truncated.text = "Showing %d of %d output values." % [MAX_VISIBLE_VALUES, values.size()]
+			panel.add_child(truncated)
+		lines.append("OUT %s shape=%s values=%s" % [output_name, shape, _preview(values)])
+		print("ONNX_INSPECTOR_OUTPUT name=%s shape=%s values=%s" % [output_name, shape, _preview(values)])
 	log_text.text = "\n".join(lines)
 
 
@@ -201,6 +225,31 @@ func _parse_shape(text: String) -> PackedInt64Array:
 	for token in text.replace("[", " ").replace("]", " ").replace(",", " ").split(" ", false):
 		shape.append(int(token))
 	return shape
+
+
+func _parse_values(text: String) -> PackedFloat32Array:
+	var normalized := text
+	for separator in ["[", "]", ",", ";", "\n", "\t"]:
+		normalized = normalized.replace(separator, " ")
+	var values := PackedFloat32Array()
+	for token in normalized.split(" ", false):
+		values.append(float(token))
+	return values
+
+
+func _fill_zeros(text: TextEdit, count: int) -> void:
+	var zeros := PackedStringArray()
+	zeros.resize(count)
+	zeros.fill("0")
+	text.text = " ".join(zeros)
+
+
+func _preview(values: PackedFloat32Array) -> String:
+	var shown := PackedStringArray()
+	for index in mini(values.size(), 32):
+		shown.append("%.6f" % values[index])
+	var suffix := " … (%d total)" % values.size() if values.size() > 32 else ""
+	return "[" + ", ".join(shown) + "]" + suffix
 
 
 func _concrete_shape_text(shape: PackedInt64Array) -> String:
