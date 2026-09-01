@@ -6,7 +6,7 @@
 #define ONNX_LOADER_RUNTIME_H
 
 /** Bump when Julian needs to confirm a rebuilt .so is loaded. */
-#define ONNX_LOADER_BUILD "ort-meta-vizemes-20260830b"
+#define ONNX_LOADER_BUILD "named-tensor-api-20260901a"
 
 #include <stdint.h>
 
@@ -15,6 +15,16 @@ extern "C" {
 #endif
 
 typedef struct OnnxRuntime OnnxRuntime;
+
+#define ONNX_LOADER_MAX_RANK 8
+
+typedef struct OnnxTensorDescriptor {
+	const char *name;
+	int element_type;
+	int rank;
+	int64_t dimensions[ONNX_LOADER_MAX_RANK];
+	int flat_size;
+} OnnxTensorDescriptor;
 
 /** Load model.onnx; introspects I/O float tensor element counts (batch=1). */
 OnnxRuntime *onnx_runtime_create(const char *model_onnx_path);
@@ -33,6 +43,22 @@ const char *onnx_runtime_ort_library_path(void);
 uint32_t onnx_runtime_ort_api_version(void);
 const char *onnx_runtime_input_name(const OnnxRuntime *rt);
 const char *onnx_runtime_output_name(const OnnxRuntime *rt);
+int onnx_runtime_input_count(const OnnxRuntime *rt);
+int onnx_runtime_output_count(const OnnxRuntime *rt);
+int onnx_runtime_input_descriptor(const OnnxRuntime *rt, int index, OnnxTensorDescriptor *out);
+int onnx_runtime_output_descriptor(const OnnxRuntime *rt, int index, OnnxTensorDescriptor *out);
+int onnx_runtime_set_input_f32(OnnxRuntime *rt, const char *name, const float *data, int data_len,
+			       const int64_t *shape, int shape_len);
+int onnx_runtime_run(OnnxRuntime *rt, const char *const *output_names, int output_count);
+int onnx_runtime_has_output(const OnnxRuntime *rt, const char *name);
+int onnx_runtime_output_data_f32(const OnnxRuntime *rt, const char *name, float *output,
+				 int output_cap, int *output_len_out);
+int onnx_runtime_output_slice_f32(const OnnxRuntime *rt, const char *name, int offset, int count,
+				  float *output);
+int onnx_runtime_output_shape(const OnnxRuntime *rt, const char *name, int64_t *shape,
+			      int shape_cap, int *shape_len_out);
+uint64_t onnx_runtime_run_generation(const OnnxRuntime *rt);
+const char *onnx_runtime_last_error(const OnnxRuntime *rt);
 
 /** Flat input length must match onnx_runtime_input_size(). */
 int onnx_runtime_predict(const OnnxRuntime *rt, const float *input, int input_len,

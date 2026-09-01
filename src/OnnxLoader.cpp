@@ -20,6 +20,20 @@ void OnnxLoader::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_diagnostics"), &OnnxLoader::get_diagnostics);
 	ClassDB::bind_method(D_METHOD("get_model_metadata"), &OnnxLoader::get_model_metadata);
 	ClassDB::bind_method(D_METHOD("get_metadata_value", "key"), &OnnxLoader::get_metadata_value);
+	ClassDB::bind_method(D_METHOD("get_input_descriptors"), &OnnxLoader::get_input_descriptors);
+	ClassDB::bind_method(D_METHOD("get_output_descriptors"), &OnnxLoader::get_output_descriptors);
+	ClassDB::bind_method(D_METHOD("set_input", "name", "data", "shape"), &OnnxLoader::set_input);
+	ClassDB::bind_method(D_METHOD("run", "output_names"), &OnnxLoader::run,
+			DEFVAL(PackedStringArray()));
+	ClassDB::bind_method(D_METHOD("has_output", "name"), &OnnxLoader::has_output);
+	ClassDB::bind_method(D_METHOD("get_output", "name"), &OnnxLoader::get_output);
+	ClassDB::bind_method(D_METHOD("get_output_slice", "name", "offset", "count"),
+			&OnnxLoader::get_output_slice);
+	ClassDB::bind_method(D_METHOD("get_output_scalar", "name", "index"),
+			&OnnxLoader::get_output_scalar, DEFVAL(0));
+	ClassDB::bind_method(D_METHOD("get_output_shape", "name"), &OnnxLoader::get_output_shape);
+	ClassDB::bind_method(D_METHOD("get_run_generation"), &OnnxLoader::get_run_generation);
+	ClassDB::bind_method(D_METHOD("get_last_error"), &OnnxLoader::get_last_error);
 	ClassDB::bind_method(D_METHOD("predict_shaped", "input_data", "shape"),
 			&OnnxLoader::predict_shaped);
 }
@@ -98,10 +112,139 @@ Dictionary OnnxLoader::get_diagnostics() const
 		d["output_size"] = get_output_size();
 		d["input_name"] = String(onnx_runtime_input_name(rt));
 		d["output_name"] = String(onnx_runtime_output_name(rt));
+		d["input_count"] = onnx_runtime_input_count(rt);
+		d["output_count"] = onnx_runtime_output_count(rt);
+		d["run_generation"] = get_run_generation();
+		d["last_error"] = get_last_error();
 	} else {
 		d["model_loaded"] = false;
 	}
 	return d;
+}
+
+static Dictionary descriptor_dictionary(const OnnxTensorDescriptor &desc)
+{
+	Dictionary d;
+	d["name"] = String(desc.name);
+	d["element_type"] = desc.element_type;
+	d["data_type"] = String("float32");
+	d["rank"] = desc.rank;
+	d["flat_size"] = desc.flat_size;
+	PackedInt64Array shape;
+	shape.resize(desc.rank);
+	for (int i = 0; i < desc.rank; i++) shape[i] = desc.dimensions[i];
+	d["shape"] = shape;
+	return d;
+}
+
+Array OnnxLoader::get_input_descriptors() const
+{
+	Array result;
+	for (int i = 0; rt && i < onnx_runtime_input_count(rt); i++) {
+		OnnxTensorDescriptor desc;
+		if (onnx_runtime_input_descriptor(rt, i, &desc) == 0)
+			result.append(descriptor_dictionary(desc));
+	}
+	return result;
+}
+
+Array OnnxLoader::get_output_descriptors() const
+{
+	Array result;
+	for (int i = 0; rt && i < onnx_runtime_output_count(rt); i++) {
+		OnnxTensorDescriptor desc;
+		if (onnx_runtime_output_descriptor(rt, i, &desc) == 0)
+			result.append(descriptor_dictionary(desc));
+	}
+	return result;
+}
+
+bool OnnxLoader::set_input(const String &name, const PackedFloat32Array &data,
+		const PackedInt64Array &shape)
+{
+	if (!rt || shape.size() > ONNX_LOADER_MAX_RANK) return false;
+	CharString input_name = name.utf8();
+	return onnx_runtime_set_input_f32(rt, input_name.get_data(), data.ptr(), data.size(),
+			shape.ptr(), shape.size()) == 0;
+}
+
+bool OnnxLoader::run(const PackedStringArray &output_names)
+{
+	if (!rt || output_names.size() > 32) return false;
+	const char *names[32];
+	CharString encoded[32];
+	for (int i = 0; i < output_names.size(); i++) {
+		encoded[i] = output_names[i].utf8();
+		names[i] = encoded[i].get_data();
+	}
+	return onnx_runtime_run(rt, output_names.is_empty() ? nullptr : names,
+			output_names.size()) == 0;
+}
+
+bool OnnxLoader::has_output(const String &name) const
+{
+	if (!rt) return false;
+	CharString n = name.utf8();
+	return onnx_runtime_has_output(rt, n.get_data()) != 0;
+}
+
+PackedInt64Array OnnxLoader::get_output_shape(const String &name) const
+{
+	PackedInt64Array shape;
+	if (!rt) return shape;
+	CharString n = name.utf8();
+	int64_t dims[ONNX_LOADER_MAX_RANK];
+	int rank = 0;
+	if (onnx_runtime_output_shape(rt, n.get_data(), dims, ONNX_LOADER_MAX_RANK, &rank)) return shape;
+	shape.resize(rank);
+	for (int i = 0; i < rank; i++) shape[i] = dims[i];
+	return shape;
+}
+
+PackedFloat32Array OnnxLoader::get_output(const String &name) const
+{
+	PackedFloat32Array result;
+	PackedInt64Array shape = get_output_shape(name);
+	int64_t count = 1;
+	for (int i = 0; i < shape.size(); i++) count *= shape[i];
+	if (!rt || count < 0 || count > INT32_MAX) return result;
+	result.resize((int)count);
+	CharString n = name.utf8();
+	int written = 0;
+	if (onnx_runtime_output_data_f32(rt, n.get_data(), result.ptrw(), result.size(), &written)) {
+		result.clear();
+	} else {
+		result.resize(written);
+	}
+	return result;
+}
+
+PackedFloat32Array OnnxLoader::get_output_slice(const String &name, int64_t offset,
+		int64_t count) const
+{
+	PackedFloat32Array result;
+	if (!rt || offset < 0 || count < 0 || offset > INT32_MAX || count > INT32_MAX) return result;
+	result.resize((int)count);
+	CharString n = name.utf8();
+	if (onnx_runtime_output_slice_f32(rt, n.get_data(), (int)offset, (int)count, result.ptrw()))
+		result.clear();
+	return result;
+}
+
+float OnnxLoader::get_output_scalar(const String &name, int64_t index) const
+{
+	PackedFloat32Array value = get_output_slice(name, index, 1);
+	return value.is_empty() ? 0.0f : value[0];
+}
+
+int64_t OnnxLoader::get_run_generation() const
+{
+	return rt ? (int64_t)onnx_runtime_run_generation(rt) : 0;
+}
+
+String OnnxLoader::get_last_error() const
+{
+	return String(onnx_runtime_last_error(rt));
 }
 
 Dictionary OnnxLoader::get_model_metadata() const

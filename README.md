@@ -32,6 +32,34 @@ ORT loads from the addon’s own `bin/` (no env vars for normal use).
 | `predict_array(Array)` | mat490-compatible `Array` wrapper |
 | `get_input_size()` / `get_output_size()` | Flat counts, or `-1` when a non-batch dim is dynamic |
 | `get_model_metadata()` / `get_metadata_value(key)` | ONNX `metadata_props` |
+| `get_input_descriptors()` / `get_output_descriptors()` | Named float32 tensor contracts: name, rank, shape and flat size |
+| `set_input(name, data, shape)` | Persistently bind or replace a named input tensor |
+| `run(output_names = [])` | Run using all bound inputs; empty selects every output |
+| `get_output(name)` / `get_output_shape(name)` | Read a selected output from the latest successful run |
+| `get_output_scalar(name, index)` / `get_output_slice(name, offset, count)` | Convenience accessors for a latest-run output |
+| `get_run_generation()` / `get_last_error()` | Detect fresh output and diagnose validation/run failures |
+
+Named inputs start **unbound** after `load_model()`. Every required input must be
+set before `run()`; a zero-filled tensor is a real bound value, not a missing
+input. Bind slow-changing inputs only when they change:
+
+```gdscript
+var loader := OnnxLoader.new()
+assert(loader.load_model("res://model.onnx"))
+loader.set_input("speaker_context", speaker_features, PackedInt64Array([1, 6]))
+loader.set_input("mel", mel_window, PackedInt64Array([1, hops, 80]))
+assert(loader.run(PackedStringArray(["vad"])))
+var vad := loader.get_output_scalar("vad")
+```
+
+Selected outputs remain native-side until a getter copies them into Godot. A
+run attempt invalidates the previous output set; success installs fresh outputs
+and increments the generation, while failure leaves no retrievable output.
+Requesting another output later requires another run.
+
+The named API supports dense `float32` tensors of rank 0–8. Other ONNX element
+types and value kinds (sequences, maps, optionals and sparse tensors) are outside
+the current contract and fail explicitly rather than being silently coerced.
 
 ## Build + smoke (Godot 4.6+)
 
