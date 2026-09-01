@@ -6,7 +6,7 @@
 #define ONNX_LOADER_RUNTIME_H
 
 /** Bump when Julian needs to confirm a rebuilt .so is loaded. */
-#define ONNX_LOADER_BUILD "named-tensor-api-20260901a"
+#define ONNX_LOADER_BUILD "named-tensor-profiler-20260901b"
 
 #include <stdint.h>
 
@@ -28,6 +28,11 @@ typedef struct OnnxTensorDescriptor {
 
 /** Load model.onnx; introspects I/O float tensor element counts (batch=1). */
 OnnxRuntime *onnx_runtime_create(const char *model_onnx_path);
+/** Create a session with ONNX Runtime JSON profiling enabled. */
+OnnxRuntime *onnx_runtime_create_profiled(const char *model_onnx_path,
+					  const char *profile_file_prefix);
+/** Flush profiling and copy its generated JSON path into out_path. May be called once. */
+int onnx_runtime_end_profiling(OnnxRuntime *rt, char *out_path, int out_path_cap);
 
 void onnx_runtime_destroy(OnnxRuntime *rt);
 

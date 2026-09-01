@@ -55,6 +55,7 @@ struct OnnxRuntime {
 	int run_output_indices[ONNX_IO_MAX];
 	int run_output_count;
 	uint64_t generation;
+	int profiling_active;
 	char last_error[512];
 };
 
@@ -464,7 +465,8 @@ done:
 	return rc;
 }
 
-OnnxRuntime *onnx_runtime_create(const char *model_onnx_path)
+static OnnxRuntime *onnx_runtime_create_impl(const char *model_onnx_path,
+					      const char *profile_file_prefix)
 {
 	if (!model_onnx_path || model_onnx_path[0] == '\0') {
 		fprintf(stderr, "onnx_runtime_create: empty model path\n");
@@ -505,6 +507,28 @@ OnnxRuntime *onnx_runtime_create(const char *model_onnx_path)
 		}
 		onnx_runtime_destroy(rt);
 		return NULL;
+	}
+	if (profile_file_prefix && profile_file_prefix[0]) {
+#ifdef _WIN32
+		int wide_len = MultiByteToWideChar(CP_UTF8, 0, profile_file_prefix, -1, NULL, 0);
+		wchar_t *wide_prefix = wide_len > 0 ? (wchar_t *)calloc((size_t)wide_len, sizeof(wchar_t)) : NULL;
+		if (!wide_prefix || !MultiByteToWideChar(CP_UTF8, 0, profile_file_prefix, -1,
+				wide_prefix, wide_len) || ort_fail(ort, ort->EnableProfiling(opts, wide_prefix),
+				"EnableProfiling")) {
+			free(wide_prefix);
+			ort->ReleaseSessionOptions(opts);
+			onnx_runtime_destroy(rt);
+			return NULL;
+		}
+		free(wide_prefix);
+#else
+		if (ort_fail(ort, ort->EnableProfiling(opts, profile_file_prefix), "EnableProfiling")) {
+			ort->ReleaseSessionOptions(opts);
+			onnx_runtime_destroy(rt);
+			return NULL;
+		}
+#endif
+		rt->profiling_active = 1;
 	}
 
 	/* Load bytes then CreateSessionFromArray — avoids path/mmap quirks under
@@ -605,6 +629,35 @@ OnnxRuntime *onnx_runtime_create(const char *model_onnx_path)
 	}
 
 	return rt;
+}
+
+OnnxRuntime *onnx_runtime_create(const char *model_onnx_path)
+{
+	return onnx_runtime_create_impl(model_onnx_path, NULL);
+}
+
+OnnxRuntime *onnx_runtime_create_profiled(const char *model_onnx_path,
+					  const char *profile_file_prefix)
+{
+	if (!profile_file_prefix || !profile_file_prefix[0]) return NULL;
+	return onnx_runtime_create_impl(model_onnx_path, profile_file_prefix);
+}
+
+int onnx_runtime_end_profiling(OnnxRuntime *rt, char *out_path, int out_path_cap)
+{
+	if (!rt || !rt->session_live || !rt->profiling_active || !out_path || out_path_cap <= 0)
+		return runtime_error(rt, "profiling is not active");
+	OrtAllocator *allocator = NULL;
+	char *generated_path = NULL;
+	if (ort_fail(rt->ort, rt->ort->GetAllocatorWithDefaultOptions(&allocator), "GetAllocator") ||
+	    ort_fail(rt->ort, rt->ort->SessionEndProfiling(rt->session, allocator, &generated_path),
+		     "SessionEndProfiling") || !generated_path)
+		return runtime_error(rt, "failed to end profiling");
+	snprintf(out_path, (size_t)out_path_cap, "%s", generated_path);
+	release_ort_string(rt->ort, allocator, generated_path);
+	rt->profiling_active = 0;
+	rt->last_error[0] = '\0';
+	return 0;
 }
 
 void onnx_runtime_destroy(OnnxRuntime *rt)

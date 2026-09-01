@@ -61,12 +61,13 @@ _gcc -O0 -I "$ROOT/src" "$ROOT/build/smoke_dyn_create.c" "$ROOT/build/libonnx_ru
 # (Avoid `strings | grep -q` under pipefail — early SIGPIPE false-fails.)
 SO="$ORTDIR/libonnx_loader.linux.template_debug.x86_64.so"
 if [[ -f "$SO" ]]; then
-	if ! grep -aFob 'ort-meta-vizemes-20260830b' "$SO" >/dev/null; then
-		echo "smoke_dyn_create: $SO missing build stamp ort-meta-vizemes-20260830b (stale .so?)" >&2
-		grep -aFo 'ort-meta-vizemes-[0-9a-z]*' "$SO" || true
+	BUILD_STAMP=$(sed -n 's/^#define ONNX_LOADER_BUILD "\([^"]*\)"/\1/p' "$ROOT/src/onnx_runtime.h")
+	test -n "$BUILD_STAMP"
+	if ! grep -aFob "$BUILD_STAMP" "$SO" >/dev/null; then
+		echo "smoke_dyn_create: $SO missing build stamp $BUILD_STAMP (stale .so?)" >&2
 		exit 1
 	fi
-	echo "ONNX_LOADER_SO_STAMP_OK ort-meta-vizemes-20260830b"
+	echo "ONNX_LOADER_SO_STAMP_OK $BUILD_STAMP"
 fi
 
 bash "$ROOT/tools/with_bundled_ort.sh" "$OUT_BIN" "$ONNX"

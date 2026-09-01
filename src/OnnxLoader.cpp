@@ -1,5 +1,6 @@
 #include "OnnxLoader.hpp"
 
+#include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/core/class_db.hpp>
 
 OnnxLoader::OnnxLoader() = default;
@@ -12,6 +13,9 @@ OnnxLoader::~OnnxLoader()
 void OnnxLoader::_bind_methods()
 {
 	ClassDB::bind_method(D_METHOD("load_model", "model_onnx_path"), &OnnxLoader::load_model);
+	ClassDB::bind_method(D_METHOD("load_model_profiled", "model_onnx_path", "profile_file_prefix"),
+			&OnnxLoader::load_model_profiled);
+	ClassDB::bind_method(D_METHOD("end_profiling"), &OnnxLoader::end_profiling);
 	ClassDB::bind_method(D_METHOD("unload_model"), &OnnxLoader::unload_model);
 	ClassDB::bind_method(D_METHOD("predict", "input_data"), &OnnxLoader::predict);
 	ClassDB::bind_method(D_METHOD("predict_array", "input_data"), &OnnxLoader::predict_array);
@@ -41,9 +45,37 @@ void OnnxLoader::_bind_methods()
 bool OnnxLoader::load_model(const String &model_onnx_path)
 {
 	unload_model();
-	CharString path = model_onnx_path.utf8();
+	String resolved_path = model_onnx_path;
+	if (model_onnx_path.begins_with("res://") || model_onnx_path.begins_with("user://")) {
+		resolved_path = ProjectSettings::get_singleton()->globalize_path(model_onnx_path);
+	}
+	CharString path = resolved_path.utf8();
 	rt = onnx_runtime_create(path.get_data());
 	return rt != nullptr;
+}
+
+bool OnnxLoader::load_model_profiled(const String &model_onnx_path,
+		const String &profile_file_prefix)
+{
+	unload_model();
+	String resolved_model = model_onnx_path;
+	String resolved_prefix = profile_file_prefix;
+	if (model_onnx_path.begins_with("res://") || model_onnx_path.begins_with("user://"))
+		resolved_model = ProjectSettings::get_singleton()->globalize_path(model_onnx_path);
+	if (profile_file_prefix.begins_with("res://") || profile_file_prefix.begins_with("user://"))
+		resolved_prefix = ProjectSettings::get_singleton()->globalize_path(profile_file_prefix);
+	CharString model_path = resolved_model.utf8();
+	CharString prefix = resolved_prefix.utf8();
+	rt = onnx_runtime_create_profiled(model_path.get_data(), prefix.get_data());
+	return rt != nullptr;
+}
+
+String OnnxLoader::end_profiling()
+{
+	if (!rt) return String();
+	char path[4096];
+	if (onnx_runtime_end_profiling(rt, path, sizeof(path))) return String();
+	return String::utf8(path);
 }
 
 void OnnxLoader::unload_model()
