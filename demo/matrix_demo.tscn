@@ -1,0 +1,161 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://matrix_demo.gd" id="1"]
+
+[node name="OnnxInspector" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.043, 0.063, 0.125, 1)
+mouse_filter = 2
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 16
+
+[node name="Page" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Title" type="Label" parent="Margin/Page"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "ONNX Tensor Inspector"
+
+[node name="ModelRow" type="HFlowContainer" parent="Margin/Page"]
+layout_mode = 2
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 6
+
+[node name="ModelLabel" type="Label" parent="Margin/Page/ModelRow"]
+layout_mode = 2
+text = "Model Path"
+
+[node name="ModelPath" type="LineEdit" parent="Margin/Page/ModelRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(360, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "res://model.onnx or /absolute/path/model.onnx"
+
+[node name="Load" type="Button" parent="Margin/Page/ModelRow"]
+layout_mode = 2
+text = "Load Model"
+
+[node name="TensorSplit" type="VSplitContainer" parent="Margin/Page"]
+layout_mode = 2
+size_flags_vertical = 3
+split_offset = 300
+
+[node name="InputSide" type="VBoxContainer" parent="Margin/Page/TensorSplit"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="InputHeading" type="Label" parent="Margin/Page/TensorSplit/InputSide"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Named Inputs"
+
+[node name="InputScroll" type="ScrollContainer" parent="Margin/Page/TensorSplit/InputSide"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="InputTables" type="VBoxContainer" parent="Margin/Page/TensorSplit/InputSide/InputScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 14
+
+[node name="OutputSide" type="VBoxContainer" parent="Margin/Page/TensorSplit"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="OutputHeading" type="Label" parent="Margin/Page/TensorSplit/OutputSide"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Named Outputs"
+
+[node name="OutputScroll" type="ScrollContainer" parent="Margin/Page/TensorSplit/OutputSide"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="OutputTables" type="VBoxContainer" parent="Margin/Page/TensorSplit/OutputSide/OutputScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 14
+
+[node name="Actions" type="HFlowContainer" parent="Margin/Page"]
+layout_mode = 2
+theme_override_constants/h_separation = 10
+theme_override_constants/v_separation = 6
+
+[node name="Run" type="Button" parent="Margin/Page/Actions"]
+layout_mode = 2
+text = "Run ONNX Once"
+
+[node name="BatchLabel" type="Label" parent="Margin/Page/Actions"]
+layout_mode = 2
+text = "Batch calls"
+
+[node name="BatchCount" type="SpinBox" parent="Margin/Page/Actions"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 1.0
+max_value = 10000.0
+value = 100.0
+
+[node name="Benchmark" type="Button" parent="Margin/Page/Actions"]
+layout_mode = 2
+text = "Benchmark"
+
+[node name="TimingLabel" type="Label" parent="Margin/Page/Actions"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+horizontal_alignment = 2
+text = "No model loaded"
+
+[node name="MetadataHeading" type="Label" parent="Margin/Page"]
+layout_mode = 2
+text = "ONNX Metadata"
+
+[node name="MetadataText" type="TextEdit" parent="Margin/Page"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 72)
+layout_mode = 2
+editable = false
+wrap_mode = 1
+
+[node name="LogText" type="TextEdit" parent="Margin/Page"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 105)
+layout_mode = 2
+editable = false
+wrap_mode = 1
+
+[connection signal="pressed" from="Margin/Page/ModelRow/Load" to="." method="_load_model"]
+[connection signal="pressed" from="Margin/Page/Actions/Run" to="." method="_run_once"]
+[connection signal="pressed" from="Margin/Page/Actions/Benchmark" to="." method="_benchmark"]

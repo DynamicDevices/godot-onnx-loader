@@ -26,6 +26,8 @@ public:
 	~OnnxLoader() override;
 
 	bool load_model(const String &model_onnx_path);
+	bool load_model_profiled(const String &model_onnx_path, const String &profile_file_prefix);
+	String end_profiling();
 	void unload_model();
 	PackedFloat32Array predict(const PackedFloat32Array &input);
 	Array predict_array(const Array &input_data);

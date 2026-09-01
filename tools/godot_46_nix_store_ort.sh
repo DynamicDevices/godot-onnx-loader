@@ -4,7 +4,9 @@
 # Run from godot-onnx-loader root (plain shell with nix available).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-NIXPKGS="${NIXPKGS:-github:nixos/nixpkgs/nixos-26.05}"
+# Pin Godot and ORT to one tested nixpkgs revision. Override NIXPKGS only when
+# deliberately validating a new matched pair.
+NIXPKGS="${NIXPKGS:-github:NixOS/nixpkgs/b6018f87da91d19d0ab4cf979885689b469cdd41}"
 OUT="${OUT:-/tmp/godot-onnx-loader-csv-smoke-46-store.txt}"
 SCONS_CACHE_BASE="${SCONS_CACHE:-$ROOT/.scons-cache}"
 export SCONS_CACHE="${SCONS_CACHE_STORE_ORT:-$SCONS_CACHE_BASE/godot46-store-ort}"

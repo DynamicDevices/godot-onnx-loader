@@ -1,11 +1,20 @@
-; Godot 4.3+ demo — OnnxLoader CSV smoke against fixtures/ci-smoke/.
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
 config_version=5
 
 [application]
-config/name="OnnxLoaderCsvSmoke"
-run/main_scene="res://csv_smoke.tscn"
-config/features=PackedStringArray("4.3")
+
+config/name="ONNX Loader Named Tensor Demo"
+run/main_scene="res://matrix_demo.tscn"
+config/features=PackedStringArray("4.6")
 
 [display]
-window/size/viewport_width=800
-window/size/viewport_height=450
+
+window/size/viewport_width=1280
+window/size/viewport_height=820
