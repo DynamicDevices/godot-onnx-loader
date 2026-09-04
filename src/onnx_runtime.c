@@ -500,6 +500,16 @@ static OnnxRuntime *onnx_runtime_create_impl(const char *model_onnx_path,
 	rt->session_live = 0;
 
 	if (ort_fail(ort, ort->CreateSessionOptions(&opts), "CreateSessionOptions") ||
+	    ort_fail(ort, ort->SetIntraOpNumThreads(opts, 1), "SetIntraOpNumThreads") ||
+	    ort_fail(ort, ort->SetInterOpNumThreads(opts, 1), "SetInterOpNumThreads") ||
+	    ort_fail(ort, ort->SetSessionExecutionMode(opts, ORT_SEQUENTIAL),
+		     "SetSessionExecutionMode") ||
+	    ort_fail(ort, ort->AddSessionConfigEntry(opts,
+					      "session.intra_op.allow_spinning", "0"),
+		     "DisableIntraOpSpinning") ||
+	    ort_fail(ort, ort->AddSessionConfigEntry(opts,
+					      "session.inter_op.allow_spinning", "0"),
+		     "DisableInterOpSpinning") ||
 	    ort_fail(ort, ort->DisableCpuMemArena(opts), "DisableCpuMemArena") ||
 	    ort_fail(ort, ort->DisableMemPattern(opts), "DisableMemPattern")) {
 		if (opts) {

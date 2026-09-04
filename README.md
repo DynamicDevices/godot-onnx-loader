@@ -94,6 +94,20 @@ The loader supports dense `float32` tensors of rank 0–8 and at most 32 inputs
 and outputs. Integer/string tensors, sequences, maps, sparse tensors, and
 unavailable execution providers fail explicitly.
 
+### Game-runtime CPU policy
+
+ONNX Runtime normally creates a parallel CPU worker pool whose threads may spin
+between calls to minimize batch-inference latency. That default is unsuitable
+for a game process making small periodic inferences: idle workers can occupy
+many cores even when each `run()` takes less than a millisecond.
+
+The loader therefore creates CPU sessions with one intra-operation thread,
+sequential execution, and intra/inter-operation spinning disabled. This keeps
+inference on the calling thread and allows the CPU to sleep between calls.
+Applications should move periodic inference to their own worker thread only
+when its measured call latency is too large for their frame budget; doing so is
+not required to prevent ONNX Runtime from occupying idle cores.
+
 On NixOS, native ORT profiling exposes the C++ allocator-boundary problem
 documented elsewhere in this repository when the required
 `ONNX_LOADER_SKIP_SESSION_RELEASE=1` workaround is active. The harness detects
