@@ -17,6 +17,7 @@ class OnnxLoader : public RefCounted {
 	GDCLASS(OnnxLoader, RefCounted)
 
 	OnnxRuntime *rt = nullptr;
+	String last_error;
 
 protected:
 	static void _bind_methods();

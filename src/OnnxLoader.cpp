@@ -3,6 +3,35 @@
 #include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/core/class_db.hpp>
 
+#define ONNX_STRINGIFY_INNER(value) #value
+#define ONNX_STRINGIFY(value) ONNX_STRINGIFY_INNER(value)
+
+static String loader_compiler()
+{
+#if defined(_MSC_VER)
+	return String("MSVC ") + ONNX_STRINGIFY(_MSC_VER);
+#elif defined(__clang__)
+	return String("Clang ") + __clang_version__;
+#elif defined(__GNUC__)
+	return String("GCC ") + __VERSION__;
+#else
+	return "unknown";
+#endif
+}
+
+static String loader_cpp_runtime()
+{
+#if defined(_MSVC_STL_VERSION)
+	return String("MSVC STL ") + ONNX_STRINGIFY(_MSVC_STL_VERSION);
+#elif defined(_LIBCPP_VERSION)
+	return String("libc++ ") + ONNX_STRINGIFY(_LIBCPP_VERSION);
+#elif defined(__GLIBCXX__)
+	return String("libstdc++ ") + ONNX_STRINGIFY(__GLIBCXX__);
+#else
+	return "unknown";
+#endif
+}
+
 OnnxLoader::OnnxLoader() = default;
 
 OnnxLoader::~OnnxLoader()
@@ -51,6 +80,7 @@ bool OnnxLoader::load_model(const String &model_onnx_path)
 	}
 	CharString path = resolved_path.utf8();
 	rt = onnx_runtime_create(path.get_data());
+	last_error = rt ? String() : String(onnx_runtime_last_error(nullptr));
 	return rt != nullptr;
 }
 
@@ -67,6 +97,7 @@ bool OnnxLoader::load_model_profiled(const String &model_onnx_path,
 	CharString model_path = resolved_model.utf8();
 	CharString prefix = resolved_prefix.utf8();
 	rt = onnx_runtime_create_profiled(model_path.get_data(), prefix.get_data());
+	last_error = rt ? String() : String(onnx_runtime_last_error(nullptr));
 	return rt != nullptr;
 }
 
@@ -138,6 +169,17 @@ Dictionary OnnxLoader::get_diagnostics() const
 	d["ort_version"] = String(onnx_runtime_ort_version());
 	d["ort_library_path"] = String(onnx_runtime_ort_library_path());
 	d["ort_api_version"] = (int64_t)onnx_runtime_ort_api_version();
+	d["loader_compiler"] = loader_compiler();
+	d["cpp_runtime"] = loader_cpp_runtime();
+	d["execution_provider"] = "CPU";
+	PackedStringArray providers;
+	providers.append("CPU");
+	d["enabled_execution_providers"] = providers;
+	d["intra_op_threads"] = 1;
+	d["inter_op_threads"] = 1;
+	d["execution_mode"] = "sequential";
+	d["allow_spinning"] = false;
+	d["graph_optimization"] = "all";
 	if (rt) {
 		d["model_loaded"] = true;
 		d["input_size"] = get_input_size();
@@ -148,8 +190,11 @@ Dictionary OnnxLoader::get_diagnostics() const
 		d["output_count"] = onnx_runtime_output_count(rt);
 		d["run_generation"] = get_run_generation();
 		d["last_error"] = get_last_error();
+		d["input_tensor_allocations"] = (int64_t)onnx_runtime_input_tensor_allocations(rt);
+		d["input_tensor_reuses"] = (int64_t)onnx_runtime_input_tensor_reuses(rt);
 	} else {
 		d["model_loaded"] = false;
+		d["last_error"] = last_error;
 	}
 	return d;
 }
@@ -238,7 +283,10 @@ PackedFloat32Array OnnxLoader::get_output(const String &name) const
 	PackedFloat32Array result;
 	PackedInt64Array shape = get_output_shape(name);
 	int64_t count = 1;
-	for (int i = 0; i < shape.size(); i++) count *= shape[i];
+	for (int i = 0; i < shape.size(); i++) {
+		if (shape[i] < 0 || (shape[i] != 0 && count > INT32_MAX / shape[i])) return result;
+		count *= shape[i];
+	}
 	if (!rt || count < 0 || count > INT32_MAX) return result;
 	result.resize((int)count);
 	CharString n = name.utf8();
@@ -276,7 +324,7 @@ int64_t OnnxLoader::get_run_generation() const
 
 String OnnxLoader::get_last_error() const
 {
-	return String(onnx_runtime_last_error(rt));
+	return rt ? String(onnx_runtime_last_error(rt)) : last_error;
 }
 
 Dictionary OnnxLoader::get_model_metadata() const
@@ -336,12 +384,15 @@ PackedFloat32Array OnnxLoader::predict_shaped(const PackedFloat32Array &input,
 		if (dims[i] <= 0) {
 			return out;
 		}
+		if (need > INT32_MAX / dims[i]) {
+			return out;
+		}
 		need *= dims[i];
 	}
 	if ((int64_t)input.size() != need) {
 		return out;
 	}
-	int cap = (int)(need > 4096 ? need * 16 : 4096);
+	int cap = need > 4096 ? (need > INT32_MAX / 16 ? INT32_MAX : (int)(need * 16)) : 4096;
 	if (cap < 4096) {
 		cap = 4096;
 	}

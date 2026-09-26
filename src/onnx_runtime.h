@@ -5,8 +5,8 @@
 #ifndef ONNX_LOADER_RUNTIME_H
 #define ONNX_LOADER_RUNTIME_H
 
-/** Bump when Julian needs to confirm a rebuilt .so is loaded. */
-#define ONNX_LOADER_BUILD "named-tensor-profiler-20260901b"
+/** Human-readable build stamp surfaced by get_diagnostics(). */
+#define ONNX_LOADER_BUILD "hardened-20260926"
 
 #include <stdint.h>
 
@@ -64,6 +64,8 @@ int onnx_runtime_output_shape(const OnnxRuntime *rt, const char *name, int64_t *
 			      int shape_cap, int *shape_len_out);
 uint64_t onnx_runtime_run_generation(const OnnxRuntime *rt);
 const char *onnx_runtime_last_error(const OnnxRuntime *rt);
+uint64_t onnx_runtime_input_tensor_allocations(const OnnxRuntime *rt);
+uint64_t onnx_runtime_input_tensor_reuses(const OnnxRuntime *rt);
 
 /** Flat input length must match onnx_runtime_input_size(). */
 int onnx_runtime_predict(const OnnxRuntime *rt, const float *input, int input_len,

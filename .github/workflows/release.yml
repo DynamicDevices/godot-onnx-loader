@@ -6,13 +6,14 @@ on:
       - "v*"
 
 env:
-  ORT_VER: "1.20.1"
+  ORT_VER: "1.22.2"
+  ORT_COMMIT: 5630b081cd25e4eccc7516a652ff956e51676794
 
 jobs:
   build-linux:
     runs-on: ubuntu-latest
     env:
-      ORT_ROOT: /tmp/onnxruntime-linux-x64-1.20.1
+      ORT_ROOT: ${{ github.workspace }}/.ort-source-install
       ORT_BUNDLE: "1"
       SCONS_CACHE: ${{ github.workspace }}/.scons-cache
     steps:
@@ -26,7 +27,9 @@ jobs:
           cache: pip
       - uses: actions/cache/restore@v5
         with:
-          path: .scons-cache
+          path: |
+            .scons-cache
+            .ort-src
           key: rel-scons-linux-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'SConstruct', 'src/**') }}-${{ github.sha }}
           restore-keys: |
             rel-scons-linux-
@@ -35,8 +38,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$SCONS_CACHE"
-          chmod +x tools/fetch_ms_ort.sh tools/package_assetlib.sh
-          bash tools/fetch_ms_ort.sh
+          chmod +x tools/build_ort_from_source.sh tools/package_assetlib.sh
+          ORT_TARGET=host bash tools/build_ort_from_source.sh
           scons -j"$(nproc)" platform=linux target=template_debug
           scons -j"$(nproc)" platform=linux target=template_release
           test -f addons/onnx_loader/bin/libonnx_loader.linux.template_debug.x86_64.so
@@ -53,15 +56,15 @@ jobs:
       - if: always()
         uses: actions/cache/save@v5
         with:
-          path: .scons-cache
+          path: |
+            .scons-cache
+            .ort-src
           key: rel-scons-linux-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'SConstruct', 'src/**') }}-${{ github.sha }}
 
   build-windows:
     runs-on: windows-latest
     env:
-      ORT_VER: "1.20.1"
-      ORT_PLATFORM: win-x64
-      ORT_ROOT: ${{ github.workspace }}/.ort/onnxruntime-win-x64-1.20.1
+      ORT_ROOT: ${{ github.workspace }}/.ort-source-install
       ORT_BUNDLE: "1"
       SCONS_CACHE: ${{ github.workspace }}/.scons-cache
     steps:
@@ -77,7 +80,7 @@ jobs:
         with:
           path: |
             .scons-cache
-            .ort
+            .ort-src
           key: rel-scons-win-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'SConstruct', 'src/**') }}-${{ github.sha }}
           restore-keys: |
             rel-scons-win-
@@ -98,21 +101,36 @@ jobs:
               }
             }
           }
-      - name: Fetch ORT + scons debug+release
+      - name: Checkout pinned ORT source
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$SCONS_CACHE"
-          chmod +x tools/fetch_ms_ort.sh
-          bash tools/fetch_ms_ort.sh
-          CL_BIN="$(dirname "$(command -v cl)")"
-          export PATH="${CL_BIN}:${PATH}"
-          hash -r
-          scons -j"$(nproc)" platform=windows target=template_debug
-          scons -j"$(nproc)" platform=windows target=template_release
-          test -f addons/onnx_loader/bin/libonnx_loader.windows.template_debug.x86_64.dll
-          test -f addons/onnx_loader/bin/libonnx_loader.windows.template_release.x86_64.dll
-          test -f addons/onnx_loader/bin/onnxruntime.dll
+          if [[ ! -d .ort-src/onnxruntime/.git ]]; then
+            git clone --filter=blob:none --no-checkout https://github.com/microsoft/onnxruntime.git .ort-src/onnxruntime
+          fi
+          git -C .ort-src/onnxruntime fetch --depth 1 origin "$ORT_COMMIT"
+          git -C .ort-src/onnxruntime checkout --detach "$ORT_COMMIT"
+          git -C .ort-src/onnxruntime submodule update --init --recursive --depth 1
+      - name: Build pinned ORT source
+        shell: cmd
+        run: >-
+          .ort-src\onnxruntime\build.bat --config Release --parallel
+          --build_shared_lib --skip_tests --compile_no_warning_as_error
+          --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF
+      - name: Stage source ORT + scons debug+release
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force .ort-source-install/include,.ort-source-install/lib
+          Copy-Item .ort-src/onnxruntime/include/onnxruntime/core/session/onnxruntime_c_api.h .ort-source-install/include/
+          Copy-Item .ort-src/onnxruntime/include/onnxruntime/core/session/onnxruntime_ep_c_api.h .ort-source-install/include/
+          Get-ChildItem .ort-src/onnxruntime/build -Recurse -Filter onnxruntime.dll | Copy-Item -Destination .ort-source-install/lib/
+          Get-ChildItem .ort-src/onnxruntime/build -Recurse -Filter onnxruntime.lib | Copy-Item -Destination .ort-source-install/lib/
+          $env:PATH = "$(Split-Path (Get-Command cl).Source);$env:PATH"
+          scons -j2 platform=windows target=template_debug
+          scons -j2 platform=windows target=template_release
+          if (-not (Test-Path addons/onnx_loader/bin/libonnx_loader.windows.template_debug.x86_64.dll)) { throw "debug DLL missing" }
+          if (-not (Test-Path addons/onnx_loader/bin/libonnx_loader.windows.template_release.x86_64.dll)) { throw "release DLL missing" }
+          if (-not (Test-Path addons/onnx_loader/bin/onnxruntime.dll)) { throw "ORT DLL missing" }
       - uses: actions/upload-artifact@v7
         with:
           name: bins-windows
@@ -125,15 +143,13 @@ jobs:
         with:
           path: |
             .scons-cache
-            .ort
+            .ort-src
           key: rel-scons-win-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'SConstruct', 'src/**') }}-${{ github.sha }}
 
   build-macos:
     runs-on: macos-latest
     env:
-      ORT_VER: "1.20.1"
-      ORT_PLATFORM: osx-arm64
-      ORT_ROOT: ${{ github.workspace }}/.ort/onnxruntime-osx-arm64-1.20.1
+      ORT_ROOT: ${{ github.workspace }}/.ort-source-install
       ORT_BUNDLE: "1"
       SCONS_CACHE: ${{ github.workspace }}/.scons-cache
     steps:
@@ -149,17 +165,17 @@ jobs:
         with:
           path: |
             .scons-cache
-            .ort
+            .ort-src
           key: rel-scons-mac-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'SConstruct', 'src/**') }}-${{ github.sha }}
           restore-keys: |
             rel-scons-mac-
       - run: pip install scons
-      - name: Fetch ORT + scons debug+release
+      - name: Build source ORT + scons debug+release
         run: |
           set -euo pipefail
           mkdir -p "$SCONS_CACHE"
-          chmod +x tools/fetch_ms_ort.sh
-          bash tools/fetch_ms_ort.sh
+          chmod +x tools/build_ort_from_source.sh
+          ORT_TARGET=macos-arm64 bash tools/build_ort_from_source.sh
           scons -j"$(sysctl -n hw.ncpu)" platform=macos target=template_debug
           scons -j"$(sysctl -n hw.ncpu)" platform=macos target=template_release
           test -d addons/onnx_loader/bin/libonnx_loader.macos.template_debug.framework
@@ -178,11 +194,64 @@ jobs:
         with:
           path: |
             .scons-cache
-            .ort
+            .ort-src
           key: rel-scons-mac-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'SConstruct', 'src/**') }}-${{ github.sha }}
 
+  build-android:
+    runs-on: ubuntu-latest
+    env:
+      ORT_ROOT: ${{ github.workspace }}/.ort-source-install
+      ORT_BUNDLE: "1"
+      SCONS_CACHE: ${{ github.workspace }}/.scons-cache
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          fetch-depth: 1
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/cache/restore@v5
+        with:
+          path: |
+            .scons-cache
+            .ort-src
+          key: rel-scons-android-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'SConstruct', 'src/**') }}-${{ github.sha }}
+          restore-keys: |
+            rel-scons-android-
+      - run: pip install scons
+      - name: Install pinned Android NDK
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.1.13356709"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.1.13356709" >> "$GITHUB_ENV"
+      - name: Build source ORT + Android arm64 debug/release
+        run: |
+          set -euo pipefail
+          chmod +x tools/build_ort_from_source.sh
+          ORT_TARGET=android-arm64 bash tools/build_ort_from_source.sh
+          scons -j"$(nproc)" platform=android arch=arm64 target=template_debug use_static_cpp=no
+          scons -j"$(nproc)" platform=android arch=arm64 target=template_release use_static_cpp=no
+          test -f addons/onnx_loader/bin/libonnx_loader.android.template_debug.arm64.so
+          test -f addons/onnx_loader/bin/libonnx_loader.android.template_release.arm64.so
+          test -f addons/onnx_loader/bin/libonnxruntime.so
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bins-android
+          path: |
+            addons/onnx_loader/bin/libonnx_loader.android.template_*.arm64.so
+            addons/onnx_loader/bin/libonnxruntime.so
+          if-no-files-found: error
+      - if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            .scons-cache
+            .ort-src
+          key: rel-scons-android-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'SConstruct', 'src/**') }}-${{ github.sha }}
+
   assetlib-package:
-    needs: [build-linux, build-windows, build-macos]
+    needs: [build-linux, build-windows, build-macos, build-android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -201,6 +270,10 @@ jobs:
       - uses: actions/download-artifact@v7
         with:
           name: bins-macos
+          path: addons/onnx_loader/bin
+      - uses: actions/download-artifact@v7
+        with:
+          name: bins-android
           path: addons/onnx_loader/bin
       - name: Build multi-platform Asset Library zip
         run: |
@@ -225,7 +298,7 @@ jobs:
           notes="$(cat <<EOF
           Asset Library zip for Godot **4.6+**.
 
-          - \`godot-onnx-loader-${GITHUB_REF_NAME}-assetlib.zip\` — **Linux + Windows + macOS** (debug + release) with Microsoft ONNX Runtime ${{ env.ORT_VER }}
+          - \`godot-onnx-loader-${GITHUB_REF_NAME}-assetlib.zip\` — **Linux + Windows + macOS arm64 + Android arm64** (debug + release), built from pinned ONNX Runtime ${{ env.ORT_VER }} source
           - \`godot-onnx-loader-${GITHUB_REF_NAME}-linux-x86_64.zip\` — Linux-only (smaller)
 
           Unzip and copy \`addons/onnx_loader/\` into your Godot project. No \`scons\` required.

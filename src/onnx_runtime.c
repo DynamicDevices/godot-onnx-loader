@@ -51,10 +51,14 @@ struct OnnxRuntime {
 	TensorInfo inputs[ONNX_IO_MAX];
 	TensorInfo outputs[ONNX_IO_MAX];
 	OrtValue *bound_inputs[ONNX_IO_MAX];
+	int bound_input_ranks[ONNX_IO_MAX];
+	int64_t bound_input_shapes[ONNX_IO_MAX][ONNX_LOADER_MAX_RANK];
 	OrtValue *run_outputs[ONNX_IO_MAX];
 	int run_output_indices[ONNX_IO_MAX];
 	int run_output_count;
 	uint64_t generation;
+	uint64_t input_tensor_allocations;
+	uint64_t input_tensor_reuses;
 	int profiling_active;
 	char last_error[512];
 };
@@ -65,9 +69,24 @@ static char g_ort_libpath[4096];
 static OrtEnv *g_env;
 static int g_env_users;
 
+#ifdef _WIN32
+#define ONNX_THREAD_LOCAL __declspec(thread)
+#else
+#define ONNX_THREAD_LOCAL _Thread_local
+#endif
+static ONNX_THREAD_LOCAL char g_last_error[512];
+
+static void set_global_error(const char *message)
+{
+	snprintf(g_last_error, sizeof(g_last_error), "%s", message ? message : "unknown error");
+}
+
 static void teardown_log(const char *stage)
 {
-	fprintf(stderr, "ONNX_LOADER_TEARDOWN %s\n", stage);
+	const char *enabled = getenv("ONNX_LOADER_TEARDOWN_LOG");
+	if (enabled && enabled[0] == '1' && enabled[1] == '\0') {
+		fprintf(stderr, "ONNX_LOADER_TEARDOWN %s\n", stage);
+	}
 }
 
 static int ort_fail(const OrtApi *ort, OrtStatus *st, const char *what)
@@ -76,6 +95,9 @@ static int ort_fail(const OrtApi *ort, OrtStatus *st, const char *what)
 		return 0;
 	}
 	const char *msg = ort->GetErrorMessage(st);
+	char detail[512];
+	snprintf(detail, sizeof(detail), "%s: %s", what ? what : "ONNX Runtime", msg ? msg : "unknown error");
+	set_global_error(detail);
 	fprintf(stderr, "ORT %s: %s\n", what, msg ? msg : "(null)");
 	ort->ReleaseStatus(st);
 	return -1;
@@ -86,6 +108,7 @@ static int runtime_error(OnnxRuntime *rt, const char *message)
 	if (rt) {
 		snprintf(rt->last_error, sizeof(rt->last_error), "%s", message ? message : "unknown error");
 	}
+	set_global_error(message);
 	fprintf(stderr, "onnx_loader: %s\n", message ? message : "unknown error");
 	return -1;
 }
@@ -115,6 +138,7 @@ static int resolve_bundled_ort_path(char *out, size_t out_cap)
 	/* Guard before any snprintf — GCC fortify -O2 (template_release) treats a
 	 * possibly-null out as -Werror=format-truncation / null destination. */
 	if (!out || out_cap < 2) {
+		set_global_error("invalid ONNX Runtime path buffer");
 		return -1;
 	}
 	out[0] = '\0';
@@ -225,6 +249,7 @@ static int resolve_bundled_ort_path(char *out, size_t out_cap)
 	fprintf(stderr,
 		"resolve_bundled_ort_path: need ORT shared lib beside the addon "
 		"(addons/onnx_loader/bin) or ONNX_ORT_BIN; see .gdextension [dependencies]\n");
+	set_global_error("ONNX Runtime shared library was not found beside the addon or in ONNX_ORT_BIN");
 	return -1;
 }
 
@@ -265,19 +290,27 @@ static const OrtApi *ort_api(void)
 #ifdef _WIN32
 		g_ort_dlhandle = (void *)LoadLibraryA(g_ort_libpath);
 		if (!g_ort_dlhandle) {
+			char detail[512];
+			snprintf(detail, sizeof(detail), "failed to load ONNX Runtime shared library: %s",
+				g_ort_libpath);
+			set_global_error(detail);
 			fprintf(stderr, "LoadLibrary ORT %s: error %lu\n", g_ort_libpath,
 				(unsigned long)GetLastError());
 			g_ort_libpath[0] = '\0';
 			return NULL;
 		}
 #else
-#ifndef RTLD_DEEPBIND
-#define RTLD_DEEPBIND 0
-#endif
-		g_ort_dlhandle = dlopen(g_ort_libpath, RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
+		/* Keep ORT in the process' normal symbol scope. RTLD_DEEPBIND can make
+		 * a plugin use two effective C++ allocator/runtime identities inside
+		 * Godot, which corrupts repeated ReleaseSession calls. */
+		g_ort_dlhandle = dlopen(g_ort_libpath, RTLD_NOW | RTLD_LOCAL);
 		if (!g_ort_dlhandle) {
 			/* dlerror() is single-shot — capture once (double-call always printed "(null)"). */
 			const char *dlerr = dlerror();
+			char detail[512];
+			snprintf(detail, sizeof(detail), "failed to load ONNX Runtime shared library: %s",
+				dlerr && dlerr[0] ? dlerr : "unknown loader error");
+			set_global_error(detail);
 			fprintf(stderr, "dlopen ORT %s: %s\n", g_ort_libpath,
 				dlerr && dlerr[0] ? dlerr : "(null)");
 			g_ort_libpath[0] = '\0';
@@ -286,6 +319,7 @@ static const OrtApi *ort_api(void)
 #endif
 		get_base = (OrtGetApiBaseFn)ort_dlsym(g_ort_dlhandle, "OrtGetApiBase");
 		if (!get_base) {
+			set_global_error("ONNX Runtime library does not export OrtGetApiBase");
 			fprintf(stderr, "ort_dlsym OrtGetApiBase failed\n");
 			ort_dlclose(g_ort_dlhandle);
 			g_ort_dlhandle = NULL;
@@ -298,11 +332,13 @@ static const OrtApi *ort_api(void)
 
 	const OrtApiBase *base = get_base ? get_base() : NULL;
 	if (!base) {
+		set_global_error("OrtGetApiBase returned null");
 		fprintf(stderr, "OrtGetApiBase failed\n");
 		return NULL;
 	}
 	g_ort = base->GetApi(ORT_API_VERSION);
 	if (!g_ort) {
+		set_global_error("ONNX Runtime does not provide the required C API version");
 		fprintf(stderr, "ORT GetApi failed\n");
 	}
 	return g_ort;
@@ -326,16 +362,9 @@ static int ort_env_use(void)
 
 static int skip_session_release(void)
 {
-	/* Default ON: Godot 4.6 + MS ORT often hits free(): invalid size in
-	 * ReleaseSession during editor/quit. Opt out with =0 for leak checks. */
+	/* Diagnostic escape hatch only. Shipping builds must destroy sessions. */
 	const char *e = getenv("ONNX_LOADER_SKIP_SESSION_RELEASE");
-	if (!e || e[0] == '\0') {
-		return 1;
-	}
-	if (e[0] == '0' && e[1] == '\0') {
-		return 0;
-	}
-	return e[0] == '1' && e[1] == '\0';
+	return e && e[0] == '1' && e[1] == '\0';
 }
 
 static void ort_env_unuse(void)
@@ -415,16 +444,24 @@ static int tensor_float_info(const OrtApi *ort, OrtSession *session, int is_inpu
 
 	shape = rank ? (int64_t *)calloc(rank, sizeof(int64_t)) : NULL;
 	if (rank && !shape) {
+		set_global_error("out of memory while reading tensor dimensions");
 		goto done;
 	}
 	if (ort_fail(ort, ort->GetDimensions(tensor_info, shape, rank), "GetDimensions")) {
 		goto done;
 	}
 
-	ONNXTensorElementDataType elem_type;
+	ONNXTensorElementDataType elem_type = ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
 	if (ort_fail(ort, ort->GetTensorElementType(tensor_info, &elem_type),
 		     "GetTensorElementType") ||
 	    elem_type != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) {
+		if (elem_type != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) {
+			char detail[128];
+			snprintf(detail, sizeof(detail),
+				"unsupported tensor element type %d; only float32 is supported",
+				(int)elem_type);
+			set_global_error(detail);
+		}
 		fprintf(stderr, "only float32 tensors supported (got type %d)\n", (int)elem_type);
 		goto done;
 	}
@@ -448,6 +485,10 @@ static int tensor_float_info(const OrtApi *ort, OrtSession *session, int is_inpu
 				break;
 			}
 		}
+		if (n > INT32_MAX / d) {
+			dynamic = 1;
+			break;
+		}
 		n *= d;
 	}
 	if (dynamic || n <= 0 || n > INT32_MAX) {
@@ -468,11 +509,16 @@ done:
 static OnnxRuntime *onnx_runtime_create_impl(const char *model_onnx_path,
 					      const char *profile_file_prefix)
 {
+	g_last_error[0] = '\0';
 	if (!model_onnx_path || model_onnx_path[0] == '\0') {
+		set_global_error("empty model path");
 		fprintf(stderr, "onnx_runtime_create: empty model path\n");
 		return NULL;
 	}
 	if (!ort_readable(model_onnx_path)) {
+		char detail[512];
+		snprintf(detail, sizeof(detail), "model not found: %s", model_onnx_path);
+		set_global_error(detail);
 		fprintf(stderr, "onnx_runtime_create: model not found: %s\n", model_onnx_path);
 		return NULL;
 	}
@@ -484,6 +530,7 @@ static OnnxRuntime *onnx_runtime_create_impl(const char *model_onnx_path,
 
 	OnnxRuntime *rt = (OnnxRuntime *)calloc(1, sizeof(*rt));
 	if (!rt) {
+		set_global_error("out of memory while allocating loader state");
 		return NULL;
 	}
 	rt->ort = ort;
@@ -504,6 +551,8 @@ static OnnxRuntime *onnx_runtime_create_impl(const char *model_onnx_path,
 	    ort_fail(ort, ort->SetInterOpNumThreads(opts, 1), "SetInterOpNumThreads") ||
 	    ort_fail(ort, ort->SetSessionExecutionMode(opts, ORT_SEQUENTIAL),
 		     "SetSessionExecutionMode") ||
+	    ort_fail(ort, ort->SetSessionGraphOptimizationLevel(opts, ORT_ENABLE_ALL),
+		     "SetGraphOptimizationLevel") ||
 	    ort_fail(ort, ort->AddSessionConfigEntry(opts,
 					      "session.intra_op.allow_spinning", "0"),
 		     "DisableIntraOpSpinning") ||
@@ -546,12 +595,14 @@ static OnnxRuntime *onnx_runtime_create_impl(const char *model_onnx_path,
 	{
 		FILE *f = fopen(model_onnx_path, "rb");
 		if (!f) {
+			set_global_error("failed to open model file");
 			fprintf(stderr, "onnx_runtime_create: fopen failed: %s\n", model_onnx_path);
 			ort->ReleaseSessionOptions(opts);
 			onnx_runtime_destroy(rt);
 			return NULL;
 		}
 		if (fseek(f, 0, SEEK_END) != 0) {
+			set_global_error("failed to seek to the end of the model file");
 			fclose(f);
 			ort->ReleaseSessionOptions(opts);
 			onnx_runtime_destroy(rt);
@@ -559,12 +610,14 @@ static OnnxRuntime *onnx_runtime_create_impl(const char *model_onnx_path,
 		}
 		long sz = ftell(f);
 		if (sz <= 0 || sz > (long)(512 * 1024 * 1024)) {
+			set_global_error("model file is empty or exceeds the 512 MiB safety limit");
 			fclose(f);
 			ort->ReleaseSessionOptions(opts);
 			onnx_runtime_destroy(rt);
 			return NULL;
 		}
 		if (fseek(f, 0, SEEK_SET) != 0) {
+			set_global_error("failed to rewind the model file");
 			fclose(f);
 			ort->ReleaseSessionOptions(opts);
 			onnx_runtime_destroy(rt);
@@ -572,6 +625,7 @@ static OnnxRuntime *onnx_runtime_create_impl(const char *model_onnx_path,
 		}
 		void *buf = malloc((size_t)sz);
 		if (!buf) {
+			set_global_error("out of memory while reading the model file");
 			fclose(f);
 			ort->ReleaseSessionOptions(opts);
 			onnx_runtime_destroy(rt);
@@ -580,6 +634,7 @@ static OnnxRuntime *onnx_runtime_create_impl(const char *model_onnx_path,
 		size_t nread = fread(buf, 1, (size_t)sz, f);
 		fclose(f);
 		if (nread != (size_t)sz) {
+			set_global_error("failed to read the complete model file");
 			free(buf);
 			ort->ReleaseSessionOptions(opts);
 			onnx_runtime_destroy(rt);
@@ -609,6 +664,9 @@ static OnnxRuntime *onnx_runtime_create_impl(const char *model_onnx_path,
 	    ort_fail(ort, ort->SessionGetOutputCount(rt->session, &output_count), "GetOutputCount") ||
 	    input_count == 0 || output_count == 0 || input_count > ONNX_IO_MAX ||
 	    output_count > ONNX_IO_MAX) {
+		if (g_last_error[0] == '\0') {
+			set_global_error("model must have 1-32 inputs and 1-32 outputs");
+		}
 		onnx_runtime_destroy(rt);
 		return NULL;
 	}
@@ -624,6 +682,7 @@ static OnnxRuntime *onnx_runtime_create_impl(const char *model_onnx_path,
 				: ort->SessionGetOutputName(rt->session, (size_t)i, allocator, &tmp_name);
 			if (ort_fail(ort, name_status, kind == 0 ? "GetInputName" : "GetOutputName") ||
 			    !tmp_name) {
+				if (g_last_error[0] == '\0') set_global_error("model tensor name is null");
 				onnx_runtime_destroy(rt);
 				return NULL;
 			}
@@ -649,7 +708,10 @@ OnnxRuntime *onnx_runtime_create(const char *model_onnx_path)
 OnnxRuntime *onnx_runtime_create_profiled(const char *model_onnx_path,
 					  const char *profile_file_prefix)
 {
-	if (!profile_file_prefix || !profile_file_prefix[0]) return NULL;
+	if (!profile_file_prefix || !profile_file_prefix[0]) {
+		set_global_error("profiling output prefix is empty");
+		return NULL;
+	}
 	return onnx_runtime_create_impl(model_onnx_path, profile_file_prefix);
 }
 
@@ -841,6 +903,17 @@ int onnx_runtime_set_input_f32(OnnxRuntime *rt, const char *name, const float *d
 		need *= shape[i];
 	}
 	if (need != data_len) return runtime_error(rt, "input data length does not match shape");
+	if (rt->bound_inputs[index] && rt->bound_input_ranks[index] == shape_len &&
+	    memcmp(rt->bound_input_shapes[index], shape, (size_t)shape_len * sizeof(*shape)) == 0) {
+		float *dest = NULL;
+		if (ort_fail(rt->ort, rt->ort->GetTensorMutableData(rt->bound_inputs[index],
+				(void **)&dest), "GetTensorData"))
+			return runtime_error(rt, "failed to access reusable input tensor");
+		memcpy(dest, data, (size_t)data_len * sizeof(float));
+		rt->input_tensor_reuses++;
+		rt->last_error[0] = '\0';
+		return 0;
+	}
 	OrtAllocator *allocator = NULL;
 	OrtValue *value = NULL;
 	if (ort_fail(rt->ort, rt->ort->GetAllocatorWithDefaultOptions(&allocator), "GetAllocator") ||
@@ -855,6 +928,9 @@ int onnx_runtime_set_input_f32(OnnxRuntime *rt, const char *name, const float *d
 	memcpy(dest, data, (size_t)data_len * sizeof(float));
 	if (rt->bound_inputs[index]) rt->ort->ReleaseValue(rt->bound_inputs[index]);
 	rt->bound_inputs[index] = value;
+	rt->bound_input_ranks[index] = shape_len;
+	memcpy(rt->bound_input_shapes[index], shape, (size_t)shape_len * sizeof(*shape));
+	rt->input_tensor_allocations++;
 	rt->last_error[0] = '\0';
 	return 0;
 }
@@ -978,7 +1054,18 @@ int onnx_runtime_output_shape(const OnnxRuntime *rt, const char *name, int64_t *
 }
 
 uint64_t onnx_runtime_run_generation(const OnnxRuntime *rt) { return rt ? rt->generation : 0; }
-const char *onnx_runtime_last_error(const OnnxRuntime *rt) { return rt ? rt->last_error : "model not loaded"; }
+const char *onnx_runtime_last_error(const OnnxRuntime *rt)
+{
+	return rt ? rt->last_error : (g_last_error[0] ? g_last_error : "model not loaded");
+}
+uint64_t onnx_runtime_input_tensor_allocations(const OnnxRuntime *rt)
+{
+	return rt ? rt->input_tensor_allocations : 0;
+}
+uint64_t onnx_runtime_input_tensor_reuses(const OnnxRuntime *rt)
+{
+	return rt ? rt->input_tensor_reuses : 0;
+}
 
 int onnx_runtime_predict(const OnnxRuntime *rt, const float *input, int input_len,
 			 float *output, int output_cap, int *output_len_out)

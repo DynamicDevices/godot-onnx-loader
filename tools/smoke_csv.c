@@ -275,6 +275,15 @@ int main(int argc, char **argv)
 	}
 
 	printf("hit_rate=%d/%d\n", hits, n);
+	uint64_t allocations = onnx_runtime_input_tensor_allocations(rt);
+	uint64_t reuses = onnx_runtime_input_tensor_reuses(rt);
+	printf("input_tensor_allocations=%llu input_tensor_reuses=%llu\n",
+	       (unsigned long long)allocations, (unsigned long long)reuses);
+	if (allocations != 1 || reuses != (uint64_t)(n - 1)) {
+		fprintf(stderr, "input tensor reuse contract failed\n");
+		onnx_runtime_destroy(rt);
+		return 1;
+	}
 	printf("ONNX_LOADER_CSV_SMOKE_OK rows=%d\n", n);
 
 	free(line);

@@ -1,6 +1,6 @@
 # OnnxLoader (Godot 4.6+)
 
-**This zip:** prebuilt GDExtension + Microsoft ONNX Runtime 1.20.1 for
+**This zip:** source-built GDExtension + pinned ONNX Runtime 1.22.2 for
 Godot 4.6+. Copy this entire directory to `res://addons/onnx_loader/`. The
 `.gdextension` is discovered automatically; no plugin toggle or autoload is
 required. Keep `bin/` beside it. Use the `OnnxLoader` class from GDScript — no env vars required
@@ -29,11 +29,13 @@ Every required named input must be bound before `run()`. Bindings persist until
 replaced or a different model is loaded. After a failure, inspect
 `get_last_error()`; output getters never return stale results from an earlier run.
 
-Multi-platform zips include Linux, Windows, and macOS binaries. Linux-only zips
-are smaller. NixOS users: prefer building from the git repo
+Multi-platform zips include Linux x86-64, Windows x86-64, macOS arm64, and
+Android arm64 binaries. Linux-only zips are smaller. NixOS users: prefer building from the git repo
 (`tools/godot_46_nix_store_ort.sh`) if the glibc prebuild does not match your Godot.
 
 Source / issues: https://github.com/DynamicDevices/godot-onnx-loader
+
+ONNX Runtime is distributed under its MIT license; see `LICENSE.onnxruntime`.
 
 ## Layout
 

@@ -68,7 +68,9 @@ jobs:
           test -f fixtures/ci-smoke/model.onnx
           test -f fixtures/ci-smoke/demo_inputs.csv
           export LIBRARY_PATH="${ORT_LIB}${LIBRARY_PATH:+:$LIBRARY_PATH}"
-          scons -j"$(nproc)" platform=linux target=template_debug smoke-csv smoke-dlopen-ort \
+          scons -j"$(nproc)" platform=linux target=template_debug \
+            smoke-csv smoke-dlopen-ort stress-sessions smoke-temporal-fixture \
+            smoke-type-rejections smoke-load-failures smoke-shape-edges benchmark-inference \
             2>&1 | tee /tmp/onnx-loader-build.log
           if grep -E '\.(c|cpp|hpp|h):[0-9]+:[0-9]+: warning:' /tmp/onnx-loader-build.log; then
             echo "FAIL: compiler warnings in build log" >&2
@@ -133,7 +135,9 @@ jobs:
             set -euo pipefail
             export SCONS_CACHE='"$SCONS_CACHE"'
             git submodule update --init --recursive
-            scons -j"$(nproc)" platform=linux target=template_debug smoke-csv smoke-dlopen-ort
+            scons -j"$(nproc)" platform=linux target=template_debug \
+              smoke-csv smoke-dlopen-ort stress-sessions smoke-temporal-fixture \
+              smoke-type-rejections smoke-load-failures smoke-shape-edges benchmark-inference
             so=addons/onnx_loader/bin/libonnx_loader.linux.template_debug.x86_64.so
             test -f "$so"
             ! ldd "$so" | grep -q libonnxruntime
