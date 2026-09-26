@@ -62,7 +62,8 @@ jobs:
           key: rel-scons-linux-${{ hashFiles('godot-cpp/bindings.py', 'godot-cpp/SConstruct', 'SConstruct', 'src/**') }}-${{ github.sha }}
 
   build-windows:
-    runs-on: windows-latest
+    # ORT 1.22.2 selects the Visual Studio 17 2022 CMake generator.
+    runs-on: windows-2022
     env:
       ORT_ROOT: ${{ github.workspace }}/.ort-source-install
       ORT_BUNDLE: "1"

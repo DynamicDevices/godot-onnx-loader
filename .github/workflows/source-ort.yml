@@ -94,7 +94,9 @@ jobs:
           if-no-files-found: error
 
   windows-source-build:
-    runs-on: windows-latest
+    # ORT 1.22.2 selects the Visual Studio 17 2022 CMake generator. Pin the
+    # matching runner instead of following windows-latest to VS 2026.
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v7
         with:
