@@ -367,6 +367,16 @@ godot-cpp/            # submodule
 tools/                # smoke + package scripts
 ```
 
+## AI-assisted development disclosure
+
+This project uses AI coding assistants, including OpenAI Codex, during design,
+implementation, debugging, test development, and documentation. AI-produced
+suggestions are treated as untrusted contributions: maintainers review the
+changes, run the documented native and Godot test suites, and remain responsible
+for the code and releases. The repository history, tests, CI results, and known
+platform limitations are kept visible so users can evaluate the software on its
+technical evidence rather than on how individual edits were drafted.
+
 ## License
 
 MIT — see [LICENSE](LICENSE). Bundled `libonnxruntime` is Microsoft ONNX Runtime;
