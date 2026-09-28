@@ -125,7 +125,6 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force .ort-source-install/include,.ort-source-install/lib
           Copy-Item .ort-src/onnxruntime/include/onnxruntime/core/session/onnxruntime_c_api.h .ort-source-install/include/
-          Copy-Item .ort-src/onnxruntime/include/onnxruntime/core/session/onnxruntime_ep_c_api.h .ort-source-install/include/
           Get-ChildItem .ort-src/onnxruntime/build -Recurse -Filter onnxruntime.dll | Copy-Item -Destination .ort-source-install/lib/
           Get-ChildItem .ort-src/onnxruntime/build -Recurse -Filter onnxruntime.lib | Copy-Item -Destination .ort-source-install/lib/
       - name: Build GDExtension against source ORT

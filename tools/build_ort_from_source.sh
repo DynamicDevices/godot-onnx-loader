@@ -37,7 +37,6 @@ esac
 rm -rf "$ORT_INSTALL"
 mkdir -p "$ORT_INSTALL/include" "$ORT_INSTALL/lib"
 cp "$ORT_SOURCE/include/onnxruntime/core/session/onnxruntime_c_api.h" "$ORT_INSTALL/include/"
-cp "$ORT_SOURCE/include/onnxruntime/core/session/onnxruntime_ep_c_api.h" "$ORT_INSTALL/include/"
 find "$ORT_SOURCE/build" \( -type f -o -type l \) \
 	\( -name 'libonnxruntime.so*' -o -name 'libonnxruntime*.dylib' \) \
 	-exec cp -P {} "$ORT_INSTALL/lib/" \;
