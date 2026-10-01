@@ -1,0 +1,161 @@
+name: source-built-ort
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+  pull_request:
+    paths:
+      - "tools/build_ort_from_source.sh"
+      - ".github/workflows/source-ort.yml"
+      - "src/**"
+      - "demo/**"
+      - "fixtures/hardening/**"
+      - "SConstruct"
+
+env:
+  ORT_COMMIT: 5630b081cd25e4eccc7516a652ff956e51676794
+
+jobs:
+  unix-source-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: host
+            artifact: linux-x86_64
+          - os: macos-14
+            target: macos-arm64
+            artifact: macos-arm64
+          - os: ubuntu-latest
+            target: android-arm64
+            artifact: android-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install pinned Android NDK
+        if: matrix.target == 'android-arm64'
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.1.13356709"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.1.13356709" >> "$GITHUB_ENV"
+      - uses: actions/cache@v5
+        with:
+          path: |
+            .ort-src
+            .ort-source-install
+          key: ort-source-${{ matrix.artifact }}-${{ env.ORT_COMMIT }}
+      - name: Build pinned ORT source
+        env:
+          ORT_TARGET: ${{ matrix.target }}
+        run: bash tools/build_ort_from_source.sh
+      - name: Build GDExtension against source ORT
+        env:
+          ORT_ROOT: ${{ github.workspace }}/.ort-source-install
+          ORT_BUNDLE: "1"
+        run: |
+          pip install scons
+          if [ "${{ matrix.target }}" = android-arm64 ]; then
+            scons -j2 platform=android arch=arm64 target=template_debug use_static_cpp=no
+            scons -j2 platform=android arch=arm64 target=template_release use_static_cpp=no
+          elif [ "${{ matrix.target }}" = macos-arm64 ]; then
+            scons -j2 platform=macos arch=arm64 target=template_debug use_static_cpp=no \
+              smoke-csv stress-sessions smoke-temporal-fixture smoke-type-rejections \
+              smoke-load-failures smoke-shape-edges benchmark-inference
+          else
+            scons -j2 platform=linux arch=x86_64 target=template_debug use_static_cpp=no \
+              smoke-csv stress-sessions smoke-temporal-fixture smoke-type-rejections \
+              smoke-load-failures smoke-shape-edges benchmark-inference
+          fi
+      - name: Godot 4.6 runtime suite against source ORT
+        if: matrix.target != 'android-arm64'
+        run: |
+          chmod +x tools/fetch_godot_46.sh tools/godot_csv_smoke.sh tools/ensure_demo_extension.sh
+          GODOT_BIN="$(bash tools/fetch_godot_46.sh)"
+          export GODOT_BIN
+          export ORT_ROOT="$GITHUB_WORKSPACE/.ort-source-install"
+          export ORT_BUNDLE=1
+          if [ "${{ matrix.target }}" = macos-arm64 ]; then
+            xattr -dr com.apple.quarantine "$GODOT_BIN" 2>/dev/null || true
+          fi
+          bash tools/godot_csv_smoke.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ort-source-${{ matrix.artifact }}
+          path: |
+            .ort-source-install
+            addons/onnx_loader
+          if-no-files-found: error
+
+  windows-source-build:
+    # ORT 1.22.2 selects the Visual Studio 17 2022 CMake generator. Pin the
+    # matching runner instead of following windows-latest to VS 2026.
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Checkout pinned ORT source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -d .ort-src/onnxruntime/.git ]]; then
+            git clone --filter=blob:none --no-checkout https://github.com/microsoft/onnxruntime.git .ort-src/onnxruntime
+          fi
+          git -C .ort-src/onnxruntime fetch --depth 1 origin "$ORT_COMMIT"
+          git -C .ort-src/onnxruntime checkout --detach "$ORT_COMMIT"
+          git -C .ort-src/onnxruntime submodule update --init --recursive --depth 1
+      - name: Build pinned ORT source
+        shell: cmd
+        run: >-
+          .ort-src\onnxruntime\build.bat --config Release --parallel
+          --build_shared_lib --skip_tests --compile_no_warning_as_error
+          --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF
+      - name: Stage ORT_ROOT
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force .ort-source-install/include,.ort-source-install/lib
+          Copy-Item .ort-src/onnxruntime/include/onnxruntime/core/session/onnxruntime_c_api.h .ort-source-install/include/
+          Get-ChildItem .ort-src/onnxruntime/build -Recurse -Filter onnxruntime.dll | Copy-Item -Destination .ort-source-install/lib/
+          Get-ChildItem .ort-src/onnxruntime/build -Recurse -Filter onnxruntime.lib | Copy-Item -Destination .ort-source-install/lib/
+      - name: Build GDExtension against source ORT
+        shell: pwsh
+        run: |
+          python -m pip install scons
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          $install = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $vcvars = Join-Path $install "VC\Auxiliary\Build\vcvars64.bat"
+          $root = (Resolve-Path .ort-source-install).Path
+          cmd /c "`"$vcvars`" && set ORT_ROOT=$root&& set ORT_BUNDLE=1&& scons -j2 platform=windows arch=x86_64 target=template_debug smoke-csv"
+      - name: Godot 4.6 runtime suite against source ORT
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -d demo/addons/onnx_loader/bin ]]; then
+            rm -f demo/addons/onnx_loader
+            mkdir -p demo/addons
+            cp -a addons/onnx_loader demo/addons/
+          fi
+          chmod +x tools/fetch_godot_46.sh tools/godot_csv_smoke.sh tools/ensure_demo_extension.sh
+          export GODOT_FORCE_WIN=1
+          GODOT_BIN="$(bash tools/fetch_godot_46.sh)"
+          export GODOT_BIN
+          export ORT_ROOT="${GITHUB_WORKSPACE}/.ort-source-install"
+          export ORT_BUNDLE=1
+          bash tools/godot_csv_smoke.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ort-source-windows-x86_64
+          path: |
+            .ort-source-install
+            addons/onnx_loader
+          if-no-files-found: error

@@ -39,7 +39,9 @@ rm -f addons/onnx_loader/bin/libstdc++.so.6 addons/onnx_loader/bin/libgcc_s.so.1
 rm -f addons/onnx_loader/bin/.ort-bundled.stamp addons/onnx_loader/bin/.ort-store.stamp
 
 nix shell "${NIXPKGS}#scons" "${NIXPKGS}#gcc" --command \
-	scons -j"$(nproc)" platform=linux target=template_debug
+	scons -j"$(nproc)" platform=linux target=template_debug \
+		stress-sessions smoke-temporal-fixture smoke-type-rejections smoke-load-failures \
+		smoke-shape-edges benchmark-inference
 
 # Symlink store ORT into bin/ so .gdextension [dependencies] resolve (still nixpkgs ORT,
 # not a MS copy). Prefer so.1 then so.
@@ -64,13 +66,15 @@ set -euo pipefail
 export ONNX_ORT_BIN=$ort_bin_q
 export ORT_BUNDLE=0
 unset ORT_MS
-export ONNX_LOADER_SKIP_SESSION_RELEASE=1
+unset ONNX_LOADER_SKIP_SESSION_RELEASE
 bash $root_q/tools/ensure_demo_extension.sh
 G=\$(command -v godot4 || command -v godot || true)
 test -n \"\$G\" && test -x \"\$G\"
 cd $root_q/demo
 \"\$G\" --headless --path . --quit-after 1 res://csv_smoke.tscn 2>&1 | tee $out_q
 grep -q GODOT_ONNX_CSV_SMOKE_OK $out_q
+\"\$G\" --headless --path . --quit-after 30 res://lifecycle_smoke.tscn 2>&1 | tee -a $out_q
+grep -q GODOT_ONNX_LIFECYCLE_OK $out_q
 bash $root_q/tools/check_glibc_free.sh $out_q
 echo GODOT_46_NIX_STORE_ORT_SMOKE_OK
 "

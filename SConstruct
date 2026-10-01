@@ -111,6 +111,14 @@ env_cpp = env.Clone()
 env_c.Append(**ort_inc_flags)
 env_cpp.Append(**ort_inc_flags)
 
+# Enforce one process-wide C++ runtime even if a caller's cached/default
+# godot-cpp options requested its traditional portable static runtime.
+env_cpp["LINKFLAGS"] = [
+    flag
+    for flag in env_cpp.get("LINKFLAGS", [])
+    if flag not in ("-static-libgcc", "-static-libstdc++")
+]
+
 if is_windows:
     # MSVC / clang-cl: keep warnings reasonable; godot-cpp sets /std.
     env_c.Append(CFLAGS=["/W3"])
@@ -140,11 +148,12 @@ else:
         # GCC-only; Apple clang rejects -fno-gnu-unique.
         env_cpp.Append(CXXFLAGS=["-fno-gnu-unique"])
         env_cpp.Append(LINKFLAGS=["-Wl,-z,noexecstack"])
-        # Portable bundled releases cannot assume a host C++ runtime. A Nix-native
-        # build instead shares the store libstdc++ used by Godot and ORT, avoiding
-        # a second C++ runtime and cross-runtime symbol/allocator interposition.
-        if os.environ.get("ORT_BUNDLE", "1") != "0":
-            env_cpp.Append(LINKFLAGS=["-static-libgcc", "-static-libstdc++"])
+        # A GDExtension and dynamically loaded ORT are one process-wide C++ ABI
+        # system. Never embed another libstdc++/libgcc in the extension: exported
+        # static-runtime symbols can interpose ORT's C++ implementation and make
+        # objects allocated during session creation invalid at ReleaseSession.
+        # Godot's Linux runtime already supplies the process C++ runtime; Nix
+        # packages must build Godot, this extension and ORT from one package set.
 
 runtime_lib = env_c.StaticLibrary("build/libonnx_runtime", runtime_c)
 
@@ -283,6 +292,7 @@ _dlopen_log = os.path.join(_smoke_out, "smoke-dlopen.txt").replace("\\", "/")
 _wrap = "bash tools/with_bundled_ort.sh"
 csv_path = "fixtures/ci-smoke/demo_inputs.csv"
 model_onnx = "fixtures/ci-smoke/model.onnx"
+temporal_model_onnx = "fixtures/hardening/temporal_pose.onnx"
 
 # Host tools must not use godot-cpp's macos universal (-arch arm64 -arch x86_64):
 # MS ORT is single-arch and dual-arch link drops _main for one slice.
@@ -348,6 +358,118 @@ smoke_csv_run = env_smoke.Command(
     f"cat {_csv_log}",
 )
 Alias("smoke-csv", smoke_csv_run)
+
+if not is_windows:
+    temporal_fixture_smoke = env_smoke.Program(
+        "build/temporal_fixture_smoke",
+        "tools/temporal_fixture_smoke.c",
+        LIBS=[runtime_lib, "stdc++", "m", "dl"],
+        **smoke_link_flags,
+    )
+    temporal_fixture_exe = str(temporal_fixture_smoke[0]).replace("\\", "/")
+    temporal_fixture_run = env_smoke.Command(
+        "build/temporal_fixture_smoke.stamp",
+        [temporal_fixture_smoke, bundle_ort, temporal_model_onnx],
+        f"{_wrap} {temporal_fixture_exe} {temporal_model_onnx} | "
+        "tee build/smoke-out/temporal-fixture.txt && "
+        "grep -q ONNX_TEMPORAL_FIXTURE_OK build/smoke-out/temporal-fixture.txt",
+    )
+    Alias("smoke-temporal-fixture", temporal_fixture_run)
+
+    type_fixture_models = [
+        f"fixtures/hardening/types/{name}.onnx"
+        for name in ("float16", "float64", "int32", "int64", "bool")
+    ]
+    type_rejection_smoke = env_smoke.Program(
+        "build/type_rejection_smoke",
+        "tools/type_rejection_smoke.c",
+        LIBS=[runtime_lib, "stdc++", "m", "dl"],
+        **smoke_link_flags,
+    )
+    type_rejection_exe = str(type_rejection_smoke[0]).replace("\\", "/")
+    type_rejection_run = env_smoke.Command(
+        "build/type_rejection_smoke.stamp",
+        [type_rejection_smoke, bundle_ort] + type_fixture_models,
+        f"{_wrap} {type_rejection_exe} {' '.join(type_fixture_models)} | "
+        "tee build/smoke-out/type-rejections.txt && "
+        "grep -c ONNX_TYPE_REJECTION_OK build/smoke-out/type-rejections.txt | grep -qx 5",
+    )
+    Alias("smoke-type-rejections", type_rejection_run)
+
+    failure_fixture_models = [
+        "fixtures/hardening/malformed.onnx",
+        "fixtures/hardening/unsupported_operator.onnx",
+    ]
+    load_failure_smoke = env_smoke.Program(
+        "build/load_failure_smoke",
+        "tools/load_failure_smoke.c",
+        LIBS=[runtime_lib, "stdc++", "m", "dl"],
+        **smoke_link_flags,
+    )
+    load_failure_exe = str(load_failure_smoke[0]).replace("\\", "/")
+    load_failure_run = env_smoke.Command(
+        "build/load_failure_smoke.stamp",
+        [load_failure_smoke, bundle_ort] + failure_fixture_models,
+        f"{_wrap} {load_failure_exe} {' '.join(failure_fixture_models)} | "
+        "tee build/smoke-out/load-failures.txt && "
+        "grep -c ONNX_LOAD_FAILURE_OK build/smoke-out/load-failures.txt | grep -qx 3",
+    )
+    Alias("smoke-load-failures", load_failure_run)
+
+    shape_fixture_models = [
+        "fixtures/hardening/scalar.onnx",
+        "fixtures/hardening/multi_dynamic.onnx",
+        "fixtures/hardening/multi_output.onnx",
+    ]
+    shape_edges_smoke = env_smoke.Program(
+        "build/shape_edges_smoke",
+        "tools/shape_edges_smoke.c",
+        LIBS=[runtime_lib, "stdc++", "m", "dl"],
+        **smoke_link_flags,
+    )
+    shape_edges_exe = str(shape_edges_smoke[0]).replace("\\", "/")
+    shape_edges_run = env_smoke.Command(
+        "build/shape_edges_smoke.stamp",
+        [shape_edges_smoke, bundle_ort] + shape_fixture_models,
+        f"{_wrap} {shape_edges_exe} {' '.join(shape_fixture_models)} | "
+        "tee build/smoke-out/shape-edges.txt && "
+        "grep -q ONNX_SHAPE_EDGES_OK build/smoke-out/shape-edges.txt",
+    )
+    Alias("smoke-shape-edges", shape_edges_run)
+
+if not is_windows:
+    session_stress = env_smoke.Program(
+        "build/session_stress",
+        "tools/session_stress.c",
+        LIBS=[runtime_lib, "stdc++", "m", "dl"],
+        **smoke_link_flags,
+    )
+    session_stress_exe = str(session_stress[0]).replace("\\", "/")
+    session_stress_run = env_smoke.Command(
+        "build/session_stress.stamp",
+        [session_stress, bundle_ort, model_onnx],
+        f"{_wrap} {session_stress_exe} {model_onnx} | tee build/smoke-out/session-stress.txt && "
+        "grep -q ONNX_SESSION_STRESS_OK build/smoke-out/session-stress.txt",
+    )
+    Alias("stress-sessions", session_stress_run)
+
+    benchmark_env = env_smoke.Clone()
+    benchmark_env.Append(CPPDEFINES=["ONNX_LOADER_HAS_REUSE_DIAGNOSTICS"])
+    inference_benchmark = benchmark_env.Program(
+        "build/inference_benchmark",
+        "tools/inference_benchmark.c",
+        LIBS=[runtime_lib, "stdc++", "m", "dl"],
+        **smoke_link_flags,
+    )
+    benchmark_exe = str(inference_benchmark[0]).replace("\\", "/")
+    benchmark_run = benchmark_env.Command(
+        "build/inference_benchmark.stamp",
+        [inference_benchmark, bundle_ort, model_onnx],
+        f"{_wrap} {benchmark_exe} {model_onnx} | "
+        "tee build/smoke-out/inference-benchmark.txt && "
+        "grep -q ONNX_INFERENCE_BENCHMARK_OK build/smoke-out/inference-benchmark.txt",
+    )
+    Alias("benchmark-inference", benchmark_run)
 
 if not is_windows:
     smoke_dlopen = env_smoke.Program(

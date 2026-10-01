@@ -4,21 +4,25 @@
 [![Release](https://img.shields.io/github/v/release/DynamicDevices/godot-onnx-loader)](https://github.com/DynamicDevices/godot-onnx-loader/releases/latest)
 [![Godot](https://img.shields.io/badge/Godot-4.6%2B-blue?logo=godotengine&logoColor=white)](https://godotengine.org/)
 
-Godot **4.6+** GDExtension that runs **ONNX** models via Microsoft ONNX Runtime
-1.20.1. Float tensors in/out only — no model-specific preprocessing.
+Godot **4.6+** GDExtension that runs **ONNX** models via ONNX Runtime. Release
+builds pin ORT **1.22.2** at commit `5630b081cd25e4eccc7516a652ff956e51676794`.
+The stable public API currently accepts dense float32 tensors only; it performs
+no model-specific preprocessing.
 
 Fork/refreshed from [mat490/Godot-ONNX-AI-Models-Loaders](https://github.com/mat490/Godot-ONNX-AI-Models-Loaders).
 
 ## Build from source
 
-The repository includes `godot-cpp` as a submodule. On Linux, this one command
-fetches ONNX Runtime 1.20.1, builds the debug GDExtension, copies its runtime
-libraries into the addon, and runs the Godot 4.6 smoke test:
+The repository includes `godot-cpp` as a submodule. The reproducible source path
+checks out the exact ORT commit above, builds a CPU-only shared runtime, and
+stages it as `ORT_ROOT`:
 
 ```bash
 git clone --recurse-submodules https://github.com/DynamicDevices/godot-onnx-loader.git
 cd godot-onnx-loader
-bash tools/godot_46_ms_ort.sh
+bash tools/build_ort_from_source.sh
+ORT_ROOT="$PWD/.ort-source-install" ORT_BUNDLE=1 \
+  scons platform=linux target=template_debug smoke-csv stress-sessions
 ```
 
 The built addon is `addons/onnx_loader/`. Copy that whole directory into another
@@ -30,7 +34,12 @@ git submodule update --init --recursive
 scons platform=linux target=template_debug # windows or macos also supported
 ```
 
-Use `bash tools/godot_46_nix_store_ort.sh` on NixOS. See
+Use `bash tools/godot_46_nix_store_ort.sh` on NixOS; it runs the complete native
+and Godot lifecycle suite against a single pinned nixpkgs compiler/runtime set.
+On Windows, `tools/bootstrap_windows_android.ps1` installs/verifies the Android
+toolchain and `tools/build_android_source_windows.ps1` builds ORT and the
+extension from source, exports an APK, installs it, and requires on-device
+inference and teardown markers. See
 [Build and verification](#build-and-verification) for smoke tests, platform
 coverage, and release packaging.
 
@@ -91,15 +100,41 @@ in the module docstrings of `demo/matrix_demo.gd` and
 `tools/make_matrix_fixture.py`, keeping explanatory prose out of the running UI.
 
 The loader supports dense `float32` tensors of rank 0–8 and at most 32 inputs
-and outputs. Integer/string tensors, sequences, maps, sparse tensors, and
-unavailable execution providers fail explicitly.
+and outputs. Float16, float64, int32, int64, and bool identity fixtures are
+tested and rejected during load with the exact ONNX element type and the
+message `only float32 is supported`; they are not silently converted. Strings,
+sequences, maps, sparse tensors, and unavailable execution providers likewise
+remain outside the current contract. Typed Godot APIs are deferred until their
+copying/coercion semantics can be added without weakening the existing float32
+API.
 
-On NixOS, native ORT profiling exposes the C++ allocator-boundary problem
-documented elsewhere in this repository when the required
-`ONNX_LOADER_SKIP_SESSION_RELEASE=1` workaround is active. The harness detects
-that marker, so the demo uses its safe wall-time batch measurement instead. The native API stays
-available for platforms that can release an ORT session normally. A host-level
-trace check is also available in `tools/smoke_profile.c` for platform diagnosis.
+### Game-runtime CPU policy
+
+ONNX Runtime normally creates a parallel CPU worker pool whose threads may spin
+between calls to minimize batch-inference latency. That default is unsuitable
+for a game process making small periodic inferences: idle workers can occupy
+many cores even when each `run()` takes less than a millisecond.
+
+The loader therefore creates CPU sessions with one intra-operation thread,
+sequential execution, and intra/inter-operation spinning disabled. This keeps
+inference on the calling thread and allows the CPU to sleep between calls.
+Applications should move periodic inference to their own worker thread only
+when its measured call latency is too large for their frame budget; doing so is
+not required to prevent ONNX Runtime from occupying idle cores.
+
+`OrtSession` and `OrtEnv` are destroyed normally. `ONNX_LOADER_SKIP_SESSION_RELEASE=1`
+is a diagnostic escape hatch only and leaks by design; never use it in a release.
+
+The teardown failure had a loader/symbol-scope cause. A native C host could
+create and destroy repeated sessions, while Godot aborted with `free(): invalid
+pointer` on the second in-process model replacement. A matched Nix compiler and
+shared C++ runtime removed one ABI variable but the two-live-model reproducer
+still failed. The decisive A/B was removing Linux `RTLD_DEEPBIND`: with normal
+`RTLD_NOW | RTLD_LOCAL` resolution, the same Godot process passes repeated
+`ReleaseSession`, shared-`OrtEnv` lifetimes, and editor shutdown. Deep binding
+had split symbol resolution across Godot and ORT's dependency graph, violating
+the allocator ownership expected by ORT's C++ implementation. The extension
+also never embeds a second static libstdc++/libgcc on Linux.
 
 From the repository root, open the demo in an installed Godot 4.6 editor with:
 
@@ -111,8 +146,7 @@ On NixOS, after `bash tools/godot_46_nix_store_ort.sh` has built and smoke-teste
 the addon, launch the matching Godot 4.6 and ONNX Runtime environment with:
 
 ```bash
-env ONNX_LOADER_SKIP_SESSION_RELEASE=1 \
-  nix shell github:NixOS/nixpkgs/b6018f87da91d19d0ab4cf979885689b469cdd41#godot_4_6 \
+nix shell github:NixOS/nixpkgs/b6018f87da91d19d0ab4cf979885689b469cdd41#godot_4_6 \
   github:NixOS/nixpkgs/b6018f87da91d19d0ab4cf979885689b469cdd41#onnxruntime \
   --command godot4 --editor --path demo
 ```
@@ -145,7 +179,7 @@ unzip, copy `addons/onnx_loader/` into your project.
 
 | Zip | Contents |
 |-----|----------|
-| `*-assetlib.zip` | Linux + Windows + macOS (debug + release) + ORT |
+| `*-assetlib.zip` | Linux + Windows + macOS arm64 + Android arm64 (debug + release) + ORT |
 | `*-linux-x86_64.zip` | Linux only (smaller) |
 
 ORT loads from the addon’s own `bin/` (no env vars for normal use).
@@ -187,32 +221,83 @@ run attempt invalidates the previous output set; success installs fresh outputs
 and increments the generation, while failure leaves no retrievable output.
 Requesting another output later requires another run.
 
+`set_input()` reuses its ORT tensor when the name, type and concrete shape are
+unchanged, copying only new values. `get_diagnostics()` reports
+`input_tensor_allocations` and `input_tensor_reuses`, plus the loader compiler,
+C++ runtime, runtime-reported ORT version/path, CPU execution provider, thread
+counts, execution mode, spinning policy, and graph optimization level.
+
+### Thread ownership
+
+An `OnnxLoader` has one mutable input/output cache and must have one exclusive
+owner at a time. It may be created, loaded and used on a worker thread, but do
+not call one instance concurrently or unload it while a run is active. Different
+fully constructed instances may run concurrently. Serialize creation/destruction
+until the shared ORT environment receives an explicit lock.
+
 The named API supports dense `float32` tensors of rank 0–8. Other ONNX element
 types and value kinds (sequences, maps, optionals and sparse tensors) are outside
 the current contract and fail explicitly rather than being silently coerced.
 
+### Model contract metadata
+
+Tensor descriptors define syntax, not meaning. Producers should add
+`onnx_loader.contract_version=1` plus metadata (or a sidecar
+`<model>.manifest.json`) describing every input/output's axis order, units,
+normalization, feature ordering and applicable sample/frame rate. The loader
+exposes metadata unchanged; model-specific preprocessing remains application code.
+
+Use these repeatable keys, substituting the exact ONNX tensor name:
+
+| Key | Example |
+|-----|---------|
+| `onnx_loader.contract_version` | `1` |
+| `onnx_loader.input.<name>.axes` | `batch,time,feature` |
+| `onnx_loader.input.<name>.units` | `unitless_rotation_like_features` |
+| `onnx_loader.input.<name>.normalization` | `mean/std sidecar-v1` |
+| `onnx_loader.input.<name>.feature_order` | `documented producer ordering` |
+| `onnx_loader.input.<name>.sample_rate_hz` / `frame_rate_hz` | `16000` / `30` |
+| `onnx_loader.output.<name>.axes` | `batch,feature` |
+| `onnx_loader.output.<name>.units` | `logits`, `radians`, etc. |
+| `onnx_loader.output.<name>.feature_order` | `documented consumer ordering` |
+
+`fixtures/hardening/temporal_pose.onnx` is a generated, redistributable example:
+dynamic `[1,time,36]` input, tested at `[1,40,36]`, with `[1,135]` output and
+the metadata schema above. It contains only `Flatten`/`Slice`, not trained weights.
+
 ## Build and verification
 
-**Linux** is the day-to-day path. **Windows / macOS** run host `smoke-csv` and
-Godot 4.6 headless `csv_smoke` in CI on every PR.
+The source-build workflow compiles pinned ORT plus the GDExtension on Linux
+x86-64, Windows x86-64, macOS arm64, and Android arm64. Desktop jobs run actual
+Godot 4.6 load/inference/replacement/teardown; Android CI compiles artifacts,
+while the physical-device test is run from the Windows script.
 
 ```bash
 git clone --recurse-submodules https://github.com/DynamicDevices/godot-onnx-loader.git
 cd godot-onnx-loader
 
-# Linux one-shot: fetch MS ORT, build, Godot 4.6 CSV smoke
-bash tools/godot_46_ms_ort.sh
-# → GODOT_46_MS_ORT_SMOKE_OK / GODOT_ONNX_CSV_SMOKE_OK
+# Pinned source ORT + extension + host suites
+bash tools/build_ort_from_source.sh
+ORT_ROOT="$PWD/.ort-source-install" ORT_BUNDLE=1 scons \
+  smoke-csv stress-sessions smoke-temporal-fixture smoke-type-rejections \
+  smoke-load-failures smoke-shape-edges benchmark-inference
 ```
 
-`scons` pulls Microsoft ORT automatically when needed and bundles it next to
-the addon — you do not need to set `ORT_ROOT` for the happy path.
+Bare `scons` retains the legacy Microsoft-binary fallback for developer
+convenience. Release artifacts and the `source-ort` workflow use the pinned
+source path instead.
 
-| Platform | Host smoke | Godot headless |
-|----------|------------|----------------|
-| Linux | `scons platform=linux … smoke-csv` | `godot_46_ms_ort.sh` / `godot_csv_smoke.sh` |
-| Windows | `scons platform=windows … smoke-csv` | CI via `fetch_godot_46.sh` |
-| macOS (arm64) | `scons platform=macos … smoke-csv` | CI via `fetch_godot_46.sh` |
+| Platform | Current status | Evidence |
+|----------|----------------|----------|
+| Linux x86-64, NixOS | Supported with pinned Nix-native ORT | Godot 4.6 two-live-model/replacement/teardown; 50-session native stress |
+| Linux x86-64, glibc distro | Experimental package | Source-build workflow and desktop runtime suite configured; release CI must pass |
+| Windows x86-64 | Experimental | Existing Godot headless CI; pinned source-build/runtime workflow configured but not yet green on this branch |
+| macOS arm64 | Experimental | Pinned source-build/runtime workflow configured but not yet green on this branch |
+| macOS x86-64/universal | Unsupported | Not packaged/tested |
+| Android arm64 | Experimental | Source-built ORT + extension; Godot 4.6.1 APK passed 8 sessions/512 runs on OnePlus 8 (Android 13) |
+| Standalone Quest | Experimental/unverified | Same arm64 target compiles; no completed Quest runtime inference yet |
+| Web / HTML5 | Unsupported design target | Current native loader uses `dlopen`/`LoadLibrary`; needs a wasm ORT build and Godot Web integration |
+| iOS | Unsupported | Not packaged/tested |
 
 Already built, with a Godot **4.6+** binary (`GODOT_BIN` / Downloads / `.godot-ci/`):
 
@@ -224,7 +309,33 @@ Run `csv_smoke.tscn` explicitly in Godot 4.6+ for the automated fixture test.
 Running the project normally opens the graphical named-tensor example.
 (`demo/.godot/` is local cache; do not commit it.)
 
-Host-only (no Godot): `scons smoke-csv`.
+Host-only (no Godot): use the SCons aliases shown above.
+
+On the current pinned Nix/ORT 1.22.2 run, 25 pairs of simultaneously live
+sessions (50 lifetimes, 5,000 inferences) completed with 15,544 KiB cold-start
+RSS growth and **0 KiB steady-state growth after five pairs**. The Godot-hosted
+suite separately completed 1,000 inferences, four model replacements, and clean
+shutdown with two loaders alive.
+
+The input-reuse benchmark used the same compiler, ORT, model, 100 warm-ups and
+10,000 measured inferences for five runs. Median CPU time changed from
+15.511 us/inference to 13.702 us/inference (11.7% lower). More importantly,
+input `OrtValue` allocations changed from **10,100 to 1**, with 10,099 in-place
+copies/reuses. Timing is fixture/host-specific; the allocation count is the
+contract enforced by CI.
+
+### Release recommendation
+
+Target `v0.4.0` after the newly configured pinned-source Windows, macOS, Linux,
+and Android release jobs pass and their merged Asset Library zip is inspected.
+Do not call the release generic across all platforms: Android remains
+experimental, Quest still needs a packaged runtime test, and Web/iOS are not
+implemented.
+
+As checked on 2026-09-25, searches of the official Godot Asset Library did not
+return this plugin; GitHub releases alone do not establish an Asset Library
+listing. Treat submission as still outstanding and verify the eventual public
+asset URL before claiming availability.
 
 ### NixOS
 
@@ -256,10 +367,21 @@ godot-cpp/            # submodule
 tools/                # smoke + package scripts
 ```
 
+## AI-assisted development disclosure
+
+This project uses AI coding assistants, including OpenAI Codex, during design,
+implementation, debugging, test development, and documentation. AI-produced
+suggestions are treated as untrusted contributions: maintainers review the
+changes, run the documented native and Godot test suites, and remain responsible
+for the code and releases. The repository history, tests, CI results, and known
+platform limitations are kept visible so users can evaluate the software on its
+technical evidence rather than on how individual edits were drafted.
+
 ## License
 
-MIT — see [LICENSE](LICENSE). Bundled `libonnxruntime` is Microsoft ONNX Runtime
-(separate license; [onnxruntime.ai](https://onnxruntime.ai/)).
+MIT — see [LICENSE](LICENSE). Bundled `libonnxruntime` is Microsoft ONNX Runtime;
+release zips include its separate MIT license as
+`addons/onnx_loader/LICENSE.onnxruntime`.
 
 ## Asset Library (maintainers)
 

@@ -13,6 +13,8 @@ windows.debug.x86_64 = "./bin/libonnx_loader.windows.template_debug.x86_64.dll"
 windows.release.x86_64 = "./bin/libonnx_loader.windows.template_release.x86_64.dll"
 macos.debug = "./bin/libonnx_loader.macos.template_debug.framework"
 macos.release = "./bin/libonnx_loader.macos.template_release.framework"
+android.debug.arm64 = "./bin/libonnx_loader.android.template_debug.arm64.so"
+android.release.arm64 = "./bin/libonnx_loader.android.template_release.arm64.so"
 
 [dependencies]
 linux.debug = {
@@ -32,4 +34,10 @@ macos.debug = {
 }
 macos.release = {
     "./bin/libonnxruntime.dylib": ""
+}
+android.debug.arm64 = {
+    "./bin/libonnxruntime.so": ""
+}
+android.release.arm64 = {
+    "./bin/libonnxruntime.so": ""
 }

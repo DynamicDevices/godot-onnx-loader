@@ -25,6 +25,7 @@ cp -a addons/onnx_loader/onnx_loader.gdextension "$OUT_DIR/addons/onnx_loader/"
 	cp -a addons/onnx_loader/onnx_loader.gdextension.uid "$OUT_DIR/addons/onnx_loader/"
 cp -a addons/onnx_loader/README.md "$OUT_DIR/addons/onnx_loader/"
 cp -a LICENSE "$OUT_DIR/addons/onnx_loader/LICENSE"
+cp -a addons/onnx_loader/LICENSE.onnxruntime "$OUT_DIR/addons/onnx_loader/"
 
 if [[ -d addons/onnx_loader/bin ]]; then
 	mkdir -p "$OUT_DIR/addons/onnx_loader/bin"
@@ -43,6 +44,9 @@ if [[ "$REQUIRE_MULTI" == "1" ]]; then
 	test -d "$BIN/libonnx_loader.macos.template_debug.framework"
 	test -d "$BIN/libonnx_loader.macos.template_release.framework"
 	test -f "$BIN/libonnxruntime.dylib"
+	test -f "$BIN/libonnx_loader.android.template_debug.arm64.so"
+	test -f "$BIN/libonnx_loader.android.template_release.arm64.so"
+	test -f "$BIN/libonnxruntime.so"
 fi
 
 # Prefer Python zipfile — Info-ZIP can exit 1 on warnings and skip writing
@@ -65,10 +69,11 @@ def keep(rel: str) -> bool:
         "addons/onnx_loader/onnx_loader.gdextension.uid",
         "addons/onnx_loader/README.md",
         "addons/onnx_loader/LICENSE",
+        "addons/onnx_loader/LICENSE.onnxruntime",
     ):
         return True
     return rel.startswith("addons/onnx_loader/bin/libonnx_loader.linux.") or rel.startswith(
-        "addons/onnx_loader/bin/libonnxruntime.so"
+        "addons/onnx_loader/bin/libonnxruntime.so.1"
     )
 
 with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED) as zf:
